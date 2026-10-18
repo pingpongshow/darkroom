@@ -41,7 +41,9 @@ for f in "${files[@]}"; do
     esac
   done < <(grep -Eo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' <<<"$content" | sort -u || true)
 
-  if grep -Eq '(^|[^0-9.])(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3})([^0-9.]|$)' <<<"$content"; then
+  # Files can opt out of the generic private-IP check with the marker "check-secrets: allow-example-ips"
+  # (e.g. subnet-logic tests). The personal denylist below still applies to them.
+  if ! grep -q "check-secrets: allow-example-ips" <<<"$content" && grep -Eq '(^|[^0-9.])(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3})([^0-9.]|$)' <<<"$content"; then
     report "$f" "private/LAN IP address"
   fi
 
