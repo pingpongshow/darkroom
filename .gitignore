@@ -1,0 +1,25 @@
+# Local planning docs (contain personal/server details) and reference sources
+/PLAN.md
+/archive/
+/reference/
+
+# Local configuration and secrets (never commit)
+Local.xcconfig
+*.local.xcconfig
+.env
+.env.*
+!.env.example
+/TestServer/.secrets/
+
+# Xcode / SwiftPM
+build/
+DerivedData/
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+*.xcuserstate
+Packages/*/.build/
+
+# macOS
+.DS_Store
