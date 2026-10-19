@@ -89,6 +89,9 @@ final class DevelopModel: ObservableObject {
             committed = context.recipe
             recipe = context.recipe
             dirty = false
+            if let version = context.version, let editor = try? await versions.record(of: version.id)?.editor {
+                status = "Edited in \(editor). Develop edits start from the original and replace that version."
+            }
             // Camera / lens default: suggested, or applied automatically if the user chose that.
             if context.recipe.isIdentity, canEdit, let exif = context.original.exifInfo,
                let preset = presets.cameraDefault(make: exif.make, model: exif.model, lens: exif.lensModel) {

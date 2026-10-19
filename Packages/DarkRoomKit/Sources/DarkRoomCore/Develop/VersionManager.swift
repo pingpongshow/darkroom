@@ -11,6 +11,8 @@ public struct VersionRecord: Codable, Hashable, Sendable {
     public var stackMembers: [String]
     public var savedAt: Date
     public var app: String = "DarkRoom"
+    /// The companion app that made this version ("Edit in…"), nil for Develop edits.
+    public var editor: String?
 }
 
 /// Pointer stored on the original (asset metadata key `darkroom.version`).
@@ -59,7 +61,7 @@ public struct VersionManager: Sendable {
         return Context(original: asset, version: nil, recipe: Self.recipe(fromBuiltIn: edits, asset: asset), builtInEdits: edits)
     }
 
-    func record(of id: String) async throws -> VersionRecord? {
+    public func record(of id: String) async throws -> VersionRecord? {
         guard let item = try? await client.getAssetMetadataByKey(id: id, key: EditRecipe.metadataKey) else { return nil }
         return try? item.value.decodeISO(VersionRecord.self)
     }
@@ -149,6 +151,33 @@ public struct VersionManager: Sendable {
         }
         try await waitForAsset(versionID)
 
+        return try await link(versionID, recipe: recipe, editor: nil, context: context, progress: progress)
+    }
+
+    /// Edit in…: uploads a companion app's result (in the original's format) as the Mac version.
+    public func saveExternal(_ result: URL, context: Context, originalFile: URL, editor: String,
+                             progress: (@Sendable (String) -> Void)? = nil) async throws -> Outcome {
+        let original = context.original
+        guard original.ownerId == (try await client.getMyUser().id) else { throw VersionError.notOwner }
+        let work = FileManager.default.temporaryDirectory.appending(path: "darkroom-external-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+        let base = (original.originalFileName as NSString).deletingPathExtension
+        let (_, ext) = RenderEngine.outputType(for: originalFile)
+        let output = work.appending(path: "\(base)-edit.\(ext)")
+        try RenderEngine.shared.transcode(result, like: originalFile, to: output)
+        progress?("Uploading…")
+        let created = ImmichDate.parse(original.fileCreatedAt) ?? .now
+        let versionID = try await client.upload(file: output, options: .init(filename: output.lastPathComponent,
+                                                                             fileCreatedAt: created, fileModifiedAt: .now)).id
+        try await waitForAsset(versionID)
+        return try await link(versionID, recipe: EditRecipe(), editor: editor, context: context, progress: progress)
+    }
+
+    /// Copies metadata to a freshly uploaded version, stacks it on top, hides the original(s) and records it.
+    func link(_ versionID: String, recipe: EditRecipe, editor: String?, context: Context,
+              progress: (@Sendable (String) -> Void)?) async throws -> Outcome {
+        let original = context.original
         progress?("Linking…")
         // Carry albums, favourite and shared links (Immich's own copy), then the rest of the metadata.
         try await client.copyAsset(body: AssetCopyDto(albums: true, favorite: true, sharedLinks: true, sidecar: false,
@@ -180,7 +209,7 @@ public struct VersionManager: Sendable {
         try await client.updateAssets(body: AssetBulkUpdateDto(ids: Array(hidden.keys), visibility: .hidden))
 
         // Remember the recipe on the version and point the original at it.
-        let record = VersionRecord(recipe: recipe, originalID: original.id, hidden: hidden, stackMembers: members, savedAt: .now)
+        let record = VersionRecord(recipe: recipe, originalID: original.id, hidden: hidden, stackMembers: members, savedAt: .now, editor: editor)
         _ = try await client.updateAssetMetadata(id: versionID, body: AssetMetadataUpsertDto(items: [
             AssetMetadataUpsertItemDto(key: EditRecipe.metadataKey, value: try JSONValue(encoding: record))]))
         _ = try await client.updateAssetMetadata(id: original.id, body: AssetMetadataUpsertDto(items: [

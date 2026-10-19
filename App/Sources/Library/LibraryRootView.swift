@@ -64,6 +64,7 @@ struct LibraryShell: View {
                     InfoPanel().frame(width: 280)
                 }
             }
+            EditSessionsBar(model: library.editIn)
             if let message = library.statusMessage {
                 Text(message).font(.caption).foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("status-message")

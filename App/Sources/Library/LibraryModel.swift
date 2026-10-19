@@ -130,6 +130,8 @@ final class LibraryModel: ObservableObject {
     private var developModel: DevelopModel?
     /// Writes metadata changes into the files (original + Mac version).
     lazy var rewrites = FileRewriteQueue(library: self)
+    /// "Edit in…" companion-app sessions.
+    lazy var editIn = EditInModel(library: self)
     @Published var selection: Set<String> = []
     @Published var focusedAssetID: String?
     @Published var showLeftPanel = true

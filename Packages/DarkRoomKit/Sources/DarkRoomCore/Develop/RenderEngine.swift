@@ -442,6 +442,31 @@ public final class RenderEngine: @unchecked Sendable {
         guard CGImageDestinationFinalize(dest) else { throw RenderError.writeFailed }
     }
 
+    /// Writes an external editor's result in the original's format (RAW → 16-bit ProPhoto TIFF), with the
+    /// original's metadata (the editor's pixels are already upright, so orientation is reset).
+    public func transcode(_ result: URL, like original: URL, to destination: URL) throws {
+        guard let image = CIImage(contentsOf: result, options: [.applyOrientationProperty: true]) else { throw RenderError.unreadable }
+        let (type, _) = Self.outputType(for: original)
+        let sixteen = Self.isRAW(original) || type == .tiff || (type == .png && Self.bitDepth(original) > 8) || Self.bitDepth(result) > 8 && type == .tiff
+        let colorSpace = Self.isRAW(original) ? CGColorSpace(name: CGColorSpace.rommrgb)! : (image.colorSpace ?? CGColorSpace(name: CGColorSpace.displayP3)!)
+        guard let cg = context.createCGImage(image, from: image.extent, format: sixteen ? .RGBA16 : .RGBA8, colorSpace: colorSpace),
+              let dest = CGImageDestinationCreateWithURL(destination as CFURL, type.identifier as CFString, 1, nil) else { throw RenderError.writeFailed }
+        var properties = Self.metadata(of: original)
+        properties[kCGImagePropertyOrientation] = 1
+        properties[kCGImagePropertyPixelWidth] = cg.width
+        properties[kCGImagePropertyPixelHeight] = cg.height
+        if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            if type == .tiff { tiff[kCGImagePropertyTIFFCompression] = 8 }
+            properties[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        if type == .jpeg || type == .heic { properties[kCGImageDestinationLossyCompressionQuality] = Self.estimatedQuality(original) }
+        properties.removeValue(forKey: kCGImagePropertyDNGDictionary)
+        properties.removeValue(forKey: kCGImagePropertyMakerAppleDictionary)
+        CGImageDestinationAddImage(dest, cg, properties as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { throw RenderError.writeFailed }
+    }
+
     /// ExifTool used to copy metadata into files Core Image writes itself (set by the app).
     public nonisolated(unsafe) static var exiftoolURL: URL?
 

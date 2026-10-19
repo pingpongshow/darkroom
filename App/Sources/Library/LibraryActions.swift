@@ -349,7 +349,12 @@ extension LibraryModel {
                 MenuEntry(title: stars == 0 ? "None" : String(repeating: "★", count: stars),
                           key: KeyEquivalent(Character(String(stars)))) { [weak self] in self?.setRating(stars) }
             }))
-        if destination != .trash { entries.append(presetMenu()) }
+        if destination != .trash {
+            entries.append(presetMenu())
+            entries.append(MenuEntry(title: "Edit in Default Editor", symbol: "arrow.up.forward.app", key: "e", modifiers: .command,
+                                     isEnabled: has) { [weak self] in self?.editIn.edit(ids, in: nil) })
+            entries.append(editInMenu())
+        }
         var albumItems: [MenuEntry] = [
             MenuEntry(title: "New Album…", symbol: "plus") { [weak self] in self?.sheet = .newAlbum(ids) },
             MenuEntry(title: "Choose Album…", key: "a", modifiers: [.command, .shift]) { [weak self] in self?.sheet = .albumPicker(ids) },
