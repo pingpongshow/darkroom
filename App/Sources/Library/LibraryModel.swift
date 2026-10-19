@@ -156,6 +156,12 @@ final class LibraryModel: ObservableObject {
     @Published var lockedUnlocked = false
     @Published var slideshow: SlideshowRequest?
     @Published var mergeRequest: MergeRequest?
+    /// Culling: move to the next photo after rating or flagging.
+    @Published var autoAdvance = UserDefaults.darkRoom.bool(forKey: "autoAdvance") {
+        didSet { UserDefaults.darkRoom.set(autoAdvance, forKey: "autoAdvance") }
+    }
+    @Published var showFilterBar = false
+    @Published var confirmTrashRejects = false
     /// Navigation history for Back (⌘[).
     private var history: [LibraryDestination] = []
     private var navigatingBack = false

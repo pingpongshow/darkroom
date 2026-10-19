@@ -94,7 +94,11 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The open library (menu-bar status), set by the library view.
+    weak var activeLibrary: LibraryModel? { didSet { objectWillChange.send() } }
+
     func open(account: Account, client: ImmichClient) {
+        IntentAccount.activeClient = client
         session = UserSession(account: accounts.account(account.id) ?? account, client: client)
         phase = .library
         lastActivity = .now
@@ -109,6 +113,8 @@ final class AppState: ObservableObject {
 
     /// Returns to the user picker (keeps the session token so the PIN unlocks instantly).
     func lock() {
+        IntentAccount.activeClient = nil
+        activeLibrary = nil
         session = nil
         pendingClient = nil
         phase = accounts.accounts.isEmpty ? .signIn(prefillAccount: nil) : .picker

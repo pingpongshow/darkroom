@@ -61,6 +61,10 @@ for album in req("GET", "/albums", token=token) or []:
     if album["albumName"].startswith(("DarkRoom ", "UITest")) and album["albumName"] != "Sample Album":
         req("DELETE", f"/albums/{album['id']}", token=token); print("deleted test album", album["albumName"])
 
+# Culling flags created by tests.
+roots = [t for t in (req("GET", "/tags", token=token) or []) if t.get("value") == "Culling"]
+for t in roots:
+    req("DELETE", f"/tags/{t['id']}", token=token); print("deleted culling tags")
 # Re-stack the camera pair (JPEG primary as seeded).
 pair = seed["raw-jpeg-pair"]
 infos = [req("GET", f"/assets/{i}", token=token) for i in pair]

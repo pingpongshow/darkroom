@@ -7,6 +7,8 @@ struct PreferencesView: View {
     @AppStorage("slideshowSeconds", store: .darkRoom) private var slideshowSeconds = 4.0
     @AppStorage("slideshowKenBurns", store: .darkRoom) private var kenBurns = true
     @AppStorage("writeMetadataToFiles", store: .darkRoom) private var writeToFiles = true
+    @AppStorage("showTips", store: .darkRoom) private var showTips = true
+    @AppStorage("autoAdvance", store: .darkRoom) private var autoAdvance = false
 
     var body: some View {
         TabView {
@@ -16,6 +18,8 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Show memories above Photos", isOn: $showMemories)
+                Toggle("Show tips", isOn: $showTips)
+                Toggle("Auto advance after rating or flagging", isOn: $autoAdvance)
                 Section("Metadata") {
                     Toggle("Write date, location, description, rating and tags into the original files", isOn: $writeToFiles)
                     Text("Changes are also kept in Immich. Rewritten files replace the originals in Immich; the previous file is kept hidden so phones don’t upload it again.")

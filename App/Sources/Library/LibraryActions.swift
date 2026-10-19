@@ -180,6 +180,7 @@ extension LibraryModel {
 
     func setRating(_ rating: Int) {
         let ids = targetIDs
+        defer { if autoAdvance && mode != .grid { step(1) } }
         perform(rating == 0 ? "Clear Rating" : "Rate \(rating)★", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setRating(ids, rating) }
     }
 
@@ -350,6 +351,13 @@ extension LibraryModel {
             })
             entries.append(.separator)
         }
+        entries.append(MenuEntry(title: "Flag", symbol: "flag", isEnabled: has, children: [
+            MenuEntry(title: "Pick", key: "p") { [weak self] in self?.setFlag(.pick) },
+            MenuEntry(title: "Reject", key: "x") { [weak self] in self?.setFlag(.reject) },
+            MenuEntry(title: "Unflag", key: "u") { [weak self] in self?.setFlag(nil) },
+            .separator,
+            MenuEntry(title: "Trash All Rejects…") { [weak self] in self?.confirmTrashRejects = true },
+        ]))
         entries.append(MenuEntry(title: allFavorite ? "Unfavorite" : "Favorite", symbol: allFavorite ? "heart.slash" : "heart",
                                  key: "h", isEnabled: has) { [weak self] in self?.toggleFavorite() })
         entries.append(MenuEntry(title: "Rating", symbol: "star", isEnabled: has, children:
@@ -426,6 +434,11 @@ extension LibraryModel {
             })
         }
         entries.append(.separator)
+        entries.append(MenuEntry(title: "Quick Look", symbol: "eye", key: "y", modifiers: .command, isEnabled: has) { [weak self] in self?.quickLook() })
+        entries.append(MenuEntry(title: "Share…", symbol: "square.and.arrow.up", isEnabled: has) { [weak self] in self?.share(from: nil) })
+        entries.append(MenuEntry(title: "Export…", symbol: "square.and.arrow.up.on.square", key: "e", modifiers: [.command, .shift], isEnabled: has) { [weak self] in
+            self?.sheet = .export(ids)
+        })
         entries.append(MenuEntry(title: "Download Original…", symbol: "arrow.down.circle", key: "d", modifiers: [.command, .option],
                                  isEnabled: has) { [weak self] in self?.downloadOriginals() })
         if visibility == .archive {

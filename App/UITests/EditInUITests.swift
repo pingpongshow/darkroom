@@ -23,10 +23,15 @@ final class EditInUITests: XCTestCase {
         app.activate()
         sleep(2)
         UITestSupport.screenshot("m6-1-edit-in", in: self)
-        app.buttons["edit-in-cancel"].firstMatch.click()
-        XCTAssertFalse(bar.waitForExistence(timeout: 3))
-        // Close Preview's window again.
+        // Quit Preview first so DarkRoom is frontmost, then cancel the session.
         let previewApp = XCUIApplication(bundleIdentifier: "com.apple.Preview")
         if previewApp.state == .runningForeground || previewApp.state == .runningBackground { previewApp.terminate() }
+        app.activate()
+        let cancel = app.buttons["edit-in-cancel"].firstMatch
+        for _ in 0..<3 where cancel.exists {
+            cancel.click()
+            _ = bar.waitForNonExistence(timeout: 3)
+        }
+        XCTAssertFalse(bar.exists, "Session cancelled")
     }
 }

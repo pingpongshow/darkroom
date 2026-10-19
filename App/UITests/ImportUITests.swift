@@ -32,6 +32,11 @@ final class ImportUITests: XCTestCase {
         UITestSupport.go(base, "Recently Added")
         let cells = base.images.matching(NSPredicate(format: "identifier BEGINSWITH 'asset-'"))
         XCTAssertTrue(cells.firstMatch.waitForExistence(timeout: 20))
+        cells.element(boundBy: 0).click()
+        XCUIElement.perform(withKeyModifiers: .shift) { cells.element(boundBy: 1).click() }
+        base.typeKey(.delete, modifierFlags: [])
+        expectation(for: NSPredicate(format: "value CONTAINS 'Move to Trash'"), evaluatedWith: status)
+        waitForExpectations(timeout: 30)
         try? FileManager.default.removeItem(at: folder)
     }
 }

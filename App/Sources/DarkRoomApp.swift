@@ -30,6 +30,11 @@ struct DarkRoomApp: App {
             CommandGroup(replacing: .importExport) { FileCommands() }
             CommandMenu("Photo") { PhotoCommands() }
             CommandGroup(after: .sidebar) { ViewCommands() }
+            CommandGroup(replacing: .help) { HelpCommands() }
+        }
+
+        MenuBarExtra("DarkRoom", systemImage: "camera.aperture") {
+            MenuBarStatus().environmentObject(state)
         }
 
         Settings {
@@ -59,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RenderEngine.exiftoolURL = Bundle.main.url(forResource: "exiftool", withExtension: nil, subdirectory: "exiftool")
         NSApp.servicesProvider = services
         NSUpdateDynamicServices()
+        TipsSetup.configure()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -128,5 +134,16 @@ struct FileCommands: View {
         Divider()
         Button("Export…") { if let l = library { l.sheet = .export(l.targetIDs) } }
             .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(library?.targetIDs.isEmpty != false)
+    }
+}
+
+struct HelpCommands: View {
+    @FocusedObject private var library: LibraryModel?
+    var body: some View {
+        Button("Keyboard Shortcuts") { library?.sheet = .shortcuts }.keyboardShortcut("/", modifiers: .command).disabled(library == nil)
+        Button("Show Tour") { library?.sheet = .tour }.disabled(library == nil)
+        Button("DarkRoom User Guide") {
+            if let url = Bundle.main.url(forResource: "UserGuide", withExtension: "md") { NSWorkspace.shared.open(url) }
+        }
     }
 }

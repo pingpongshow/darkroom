@@ -20,6 +20,7 @@ struct LibraryRootView: View {
         .task(id: session.id) {
             let library = LibraryModel(session: session)
             holder.library = library
+            state.activeLibrary = library
             await library.start()
         }
         .onDisappear { holder.library?.stop() }
@@ -87,6 +88,15 @@ struct LibraryShell: View {
         .sheet(item: $library.sheet) { sheet in
             LibrarySheetView(sheet: sheet).environmentObject(library)
         }
+        .confirmationDialog("Move all rejected photos to Immich’s trash?", isPresented: $library.confirmTrashRejects) {
+            Button("Move Rejects to Trash", role: .destructive) { library.trashRejects() }
+        } message: { Text("They can be restored from the trash until Immich empties it.") }
+        .onReceive(NotificationCenter.default.publisher(for: .openAlbumNamed)) { note in
+            if let name = note.object as? String,
+               let album = library.albums.first(where: { $0.albumName.localizedCaseInsensitiveCompare(name) == .orderedSame }) {
+                library.destination = .album(album.id)
+            }
+        }
         .confirmationDialog("Permanently delete \(trashCount) item\(trashCount == 1 ? "" : "s")?", isPresented: $confirmEmptyTrash) {
             Button("Delete Permanently", role: .destructive) { library.emptyTrash() }
                 .accessibilityIdentifier("confirm-empty-trash")
@@ -122,7 +132,12 @@ struct LibraryShell: View {
         }
         .onAppear { library.undoManager = undoManager }
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
-        .onAppear { installKeyMonitor() }
+        .onAppear {
+            installKeyMonitor()
+            if !UserDefaults.darkRoom.bool(forKey: "tourSeen"), ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] == nil {
+                library.sheet = .tour
+            }
+        }
         .onDisappear { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
     }
 
@@ -133,6 +148,7 @@ struct LibraryShell: View {
             switch library.mode {
             case .grid:
                 VStack(spacing: 0) {
+                    if library.showFilterBar { FilterBar() }
                     if library.destination == .trash { TrashBar(timeline: library.timeline) }
                     if let album = library.currentAlbum { AlbumHeader(album: album) }
                     if library.destination == .photos { MemoriesStrip() }
@@ -147,6 +163,10 @@ struct LibraryShell: View {
                 }
             case .develop:
                 DevelopView(develop: library.develop)
+            case .compare:
+                CompareView()
+            case .survey:
+                SurveyView()
             default:
                 LoupeView()
                     .contextMenu { MenuEntriesView(entries: library.assetMenu(includeOpen: false)) }
@@ -206,6 +226,11 @@ struct LibraryShell: View {
         guard mods.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
         if library.destination.showsGrid, !library.targetIDs.isEmpty, library.destination != .trash {
             switch key {
+            case "p": library.setFlag(.pick); return true
+            case "x": library.setFlag(.reject); return true
+            case "u": library.setFlag(nil); return true
+            case "c": library.toggleMode(.compare); return true
+            case "n": library.toggleMode(.survey); return true
             case "h": library.toggleFavorite(); return true
             case "0", "1", "2", "3", "4", "5": library.setRating(Int(key)!); return true
             default: break
@@ -222,6 +247,7 @@ struct LibraryShell: View {
         case "g": library.mode = .grid; return true
         case "e": library.toggleMode(.loupe); return true
         case "d": library.toggleMode(.develop); return true
+        case "\\" where library.mode == .grid: library.showFilterBar.toggle(); return true
         case "i": library.showInfoOverlay.toggle(); return true
         case "f": NSApp.keyWindow?.toggleFullScreen(nil); return true
         case " " where library.mode == .loupe:
