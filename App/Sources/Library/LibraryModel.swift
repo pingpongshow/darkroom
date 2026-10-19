@@ -352,6 +352,17 @@ final class LibraryModel: ObservableObject {
         return timeline.asset(id)
     }
 
+    /// Back one level: Develop → photo → grid (the grid shows the photo you were on).
+    func back() {
+        switch mode {
+        case .develop: mode = .loupe
+        case .grid: break
+        default:
+            if let id = focusedAssetID { selection = [id] }
+            mode = .grid
+        }
+    }
+
     func open(_ id: String) {
         focusedAssetID = id
         selection = [id]

@@ -27,12 +27,14 @@ struct LoupeView: View {
                             .accessibilityLabel("Live Photo motion")
                             .accessibilityIdentifier("video-player")
                     } else {
-                        ZoomableImageView(image: image, onZoomBeyondFit: { loadFullSize(asset) })
+                        ZoomableImageView(image: image, onZoomBeyondFit: { loadFullSize(asset) },
+                                          onSwipe: { library.step($0) })
                             .id(asset.id)
                         liveButton(asset)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .zIndex(1)
                     }
+                    StepArrows()
                     if library.showInfoOverlay, let image {
                         InfoOverlay(asset: asset, image: image).padding(14)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -42,10 +44,14 @@ struct LoupeView: View {
                 }
                 if let loadError { Text(loadError).foregroundStyle(Theme.danger).padding().background(.black.opacity(0.6)) }
             }
-            .background { GeometryReader { geo in Color.clear.preference(key: LoupeFrameKey.self, value: geo.frame(in: .global)) } }
-            .onPreferenceChange(LoupeFrameKey.self) { library.loupeFrame = $0 }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { library.loupeFrame = $0 }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("loupe")
+            .overlay(alignment: .bottomLeading) {
+                // The shown photo's id, for accessibility tools and UI tests.
+                Text(library.focusedAssetID ?? "").font(.system(size: 1)).opacity(0.01)
+                    .accessibilityIdentifier("loupe-asset-id").allowsHitTesting(false)
+            }
             if let asset = library.focusedAsset, asset.stackID != nil { StackStrip(asset: asset) }
             PresetBar()
             if library.showFilmstrip { FilmstripView().frame(height: 86) }
@@ -100,15 +106,18 @@ struct LoupeView: View {
 struct ZoomableImageView: NSViewRepresentable {
     var image: CGImage?
     var onZoomBeyondFit: () -> Void
+    var onSwipe: (Int) -> Void = { _ in }
 
     func makeNSView(context: Context) -> ZoomScrollView {
         let scroll = ZoomScrollView()
         scroll.onZoomBeyondFit = onZoomBeyondFit
+        scroll.onSwipe = onSwipe
         return scroll
     }
 
     func updateNSView(_ scroll: ZoomScrollView, context: Context) {
         scroll.onZoomBeyondFit = onZoomBeyondFit
+        scroll.onSwipe = onSwipe
         scroll.setImage(image)
     }
 }
@@ -118,6 +127,10 @@ final class ZoomScrollView: NSScrollView {
     private var currentImage: CGImage?
     private var naturalSize = NSSize.zero
     var onZoomBeyondFit: (() -> Void)?
+    /// Two-finger horizontal swipe while the photo fits the view: +1 next, -1 previous.
+    var onSwipe: ((Int) -> Void)?
+    private var swipeDistance: CGFloat = 0
+    private var swipeFired = false
     private var requestedFull = false
     private var needsFit = false
 
@@ -178,6 +191,22 @@ final class ZoomScrollView: NSScrollView {
     private func fitMagnification(for size: NSSize) -> CGFloat {
         guard size.width > 0, size.height > 0, bounds.width > 0 else { return 1 }
         return min(bounds.width / size.width, bounds.height / size.height, 1)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let atFit = magnification <= fitMagnification(for: naturalSize) * 1.01
+        let trackpad = event.hasPreciseScrollingDeltas && (event.phase != [] || event.momentumPhase != [])
+        guard atFit, trackpad else { return super.scrollWheel(with: event) }
+        if event.momentumPhase != [] { return }   // ignore the glide after the fingers lift
+        if event.phase.contains(.began) { swipeDistance = 0; swipeFired = false }
+        if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) { swipeDistance += event.scrollingDeltaX }
+        if !swipeFired, abs(swipeDistance) > 50 {
+            swipeFired = true
+            // Natural scrolling: fingers moving left give negative deltas, like turning a page forward.
+            let direction = swipeDistance < 0 ? 1 : -1
+            onSwipe?(event.isDirectionInvertedFromDevice ? direction : -direction)
+        }
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) { swipeDistance = 0 }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -353,8 +382,36 @@ struct PresetBar: View {
     }
 }
 
-/// The loupe's frame in window coordinates (top-left origin), so a right-click on it can play a Live Photo.
-struct LoupeFrameKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+/// ‹ and › on the sides of the loupe for the previous / next photo.
+struct StepArrows: View {
+    @EnvironmentObject var library: LibraryModel
+    @State private var hovering = false
+
+    var body: some View {
+        let ids = library.orderedAssets.map(\.id)
+        let index = library.focusedAssetID.flatMap { ids.firstIndex(of: $0) }
+        HStack {
+            arrow("chevron.left", help: "Previous photo (←)", id: "loupe-previous", enabled: (index ?? 0) > 0) { library.step(-1) }
+            Spacer()
+            arrow("chevron.right", help: "Next photo (→)", id: "loupe-next", enabled: index.map { $0 < ids.count - 1 } ?? false) { library.step(1) }
+        }
+        .padding(.horizontal, 12)
+        .frame(maxHeight: .infinity)
+        .onHover { hovering = $0 }
+        .zIndex(2)
+    }
+
+    private func arrow(_ symbol: String, help: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.black.opacity(0.45)))
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? (hovering ? 1 : 0.35) : 0)
+        .disabled(!enabled)
+        .help(help)
+        .accessibilityIdentifier(id)
+    }
 }

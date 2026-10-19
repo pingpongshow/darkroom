@@ -96,6 +96,13 @@ struct GridView: NSViewRepresentable {
             let storeChanged = store != self.store
             self.store = store
             let sizeChanged = cellSize != self.cellSize
+            // A month finished loading or an asset changed: update just those cells, not the whole grid
+            // (a full reload redraws every visible thumbnail and makes the grid flicker).
+            if !storeChanged, !sizeChanged, let collection, updateInPlace(old: self.sections, new: sections, in: collection) {
+                self.revision = revision
+                syncSelection(library.selection, force: true)
+                return
+            }
             self.sections = sections
             self.revision = revision
             self.cellSize = cellSize
@@ -110,21 +117,67 @@ struct GridView: NSViewRepresentable {
             syncSelection(selected, force: true)
         }
 
-        /// Back from the loupe / Develop: the same scroll position, moved only if the photo you were on is off-screen.
+        /// Applies changes without reloadData when the month structure is the same. Returns false when a full reload is needed.
+        private func updateInPlace(old: [TimelineSection], new: [TimelineSection], in collection: NSCollectionView) -> Bool {
+            guard old.count == new.count else { return false }
+            var resized = IndexSet()
+            var changed: [Int] = []
+            for i in new.indices {
+                guard old[i].bucket == new[i].bucket else { return false }
+                let oldCount = old[i].assets?.count ?? old[i].count
+                let newCount = new[i].assets?.count ?? new[i].count
+                if oldCount != newCount { resized.insert(i) }
+                else if old[i].assets != new[i].assets { changed.append(i) }
+            }
+            sections = new
+            if !resized.isEmpty {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    collection.reloadSections(resized)
+                }
+            }
+            // Same number of cells: refresh the visible ones in place (unchanged photos keep their image).
+            for path in collection.indexPathsForVisibleItems() where changed.contains(path.section) {
+                guard let item = collection.item(at: path) as? ThumbnailItem else { continue }
+                if let asset = new[path.section].assets?[safe: path.item] {
+                    item.configure(asset: asset, pipeline: library.pipeline, cellSize: cellSize)
+                }
+            }
+            return true
+        }
+
+        /// Back from a photo: show that same photo in the grid (centred and selected); otherwise the last scroll position.
         private func restoreScroll(store: ObjectIdentifier) {
             guard let collection else { restoring = false; return }
+            if let id = library.focusedAssetID {
+                collection.scroll(NSPoint(x: 0, y: library.gridScroll?.store == store ? library.gridScroll!.y : 0))
+                reveal(id, attempts: 6)
+                return
+            }
             guard let saved = library.gridScroll, saved.store == store else {
                 collection.scroll(.zero); restoring = false; scrolled(nil); return
             }
             collection.layoutSubtreeIfNeeded()
             collection.scroll(NSPoint(x: 0, y: saved.y))
-            if let id = library.focusedAssetID, let path = indexPath(of: id),
-               let frame = collection.layoutAttributesForItem(at: path)?.frame,
-               !collection.visibleRect.contains(frame) {
-                collection.scrollToItems(at: [path], scrollPosition: .centeredVertically)
-            }
             restoring = false
             scrolled(nil)
+        }
+
+        /// Centres a photo once the grid has its size (retrying while the window lays out or its month loads).
+        func reveal(_ id: String, attempts: Int) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (attempts == 6 ? 0 : 0.12)) { [weak self] in
+                guard let self, let collection = self.collection else { return }
+                collection.layoutSubtreeIfNeeded()
+                if collection.bounds.width > 0, let path = self.indexPath(of: id) {
+                    collection.scrollToItems(at: [path], scrollPosition: .centeredVertically)
+                    self.restoring = false
+                    self.scrolled(nil)
+                } else if attempts > 0 {
+                    self.reveal(id, attempts: attempts - 1)
+                } else {
+                    self.restoring = false
+                }
+            }
         }
 
         private var restoring = false
@@ -284,6 +337,8 @@ final class ThumbnailItem: NSCollectionViewItem {
     private let icons = NSTextField(labelWithString: "")
     private var task: Task<Void, Never>?
     private(set) var assetID: String?
+    /// The rendition currently shown (so re-configuring the same photo doesn't flash its placeholder).
+    private var shownKey: ImagePipeline.Key?
 
     override func loadView() {
         view = NSView()
@@ -324,6 +379,7 @@ final class ThumbnailItem: NSCollectionViewItem {
     func configurePlaceholder() {
         task?.cancel()
         assetID = nil
+        shownKey = nil
         imageLayer.contents = nil
         badge.stringValue = ""
         icons.stringValue = ""
@@ -337,8 +393,6 @@ final class ThumbnailItem: NSCollectionViewItem {
         view.setAccessibilityRole(.image)
         view.setAccessibilityIdentifier("asset-\(asset.id)")
         view.setAccessibilityLabel(asset.isVideo ? "Video" : asset.isLivePhoto ? "Live Photo" : "Photo")
-        imageLayer.contents = asset.thumbhash.flatMap { ThumbHash.cgImage(base64: $0) }
-
         var flags: [String] = []
         if asset.isFavorite { flags.append("♥") }
         if asset.isLivePhoto { flags.append("LIVE") }
@@ -351,13 +405,29 @@ final class ThumbnailItem: NSCollectionViewItem {
         let wanted = Int(cellSize * scale)
         let size: AssetMediaSize = wanted > 300 ? .preview : .thumbnail
         let key = ImagePipeline.Key(assetID: asset.id, size: size, cacheKey: asset.cacheKey)
+        let maxPixel = max(wanted, 256)
+        // Already showing this rendition: nothing to redraw.
+        if shownKey == key { return }
+        // In memory: draw immediately, without the blurred placeholder or a fade.
+        if let cached = pipeline.cachedImage(key, maxPixel: maxPixel) {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            imageLayer.contents = cached
+            CATransaction.commit()
+            shownKey = key
+            return
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        imageLayer.contents = asset.thumbhash.flatMap { ThumbHash.cgImage(base64: $0) }
+        CATransaction.commit()
+        shownKey = nil
         let id = asset.id
         task = Task { [weak self] in
-            guard let image = try? await pipeline.image(key, maxPixel: max(wanted, 256)) else { return }
+            guard let image = try? await pipeline.image(key, maxPixel: maxPixel) else { return }
             guard let self, self.assetID == id, !Task.isCancelled else { return }
             CATransaction.begin(); CATransaction.setAnimationDuration(0.12)
             self.imageLayer.contents = image
             CATransaction.commit()
+            self.shownKey = key
         }
     }
 

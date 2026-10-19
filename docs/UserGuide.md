@@ -29,7 +29,7 @@ DarkRoom is a Mac app for your Immich photo library, with Lightroom-style cullin
 
 Sidebar: Photos, Explore, Map, People, Places, Albums, Sharing, Favorites, Memories, Recently Added, Recently Edited, Tags, Archive, Locked Folder, Duplicates, Bursts, Large Files, Trash.
 
-- **‹ Grid** (or Esc) goes back from a photo to the grid, where you left it. The date bar beside the grid jumps to a year or month; hover to see the full date.
+- **‹ Back** (or Esc) goes from the editor to the photo, and from the photo to the grid, which shows the photo you were on. In a photo, swipe left/right with two fingers or use the ‹ › arrows for the previous/next photo. The date bar beside the grid jumps to a year or month; hover to see the full date.
 - **Edit** in the title bar (or D, or right-click ▸ Edit Photo) opens the editor: Crop, Rotate, Flip, Heal, Masks, White Balance and every adjustment panel.
 - Right-click a Live Photo to play it.
 - People: hover a face and click the eye to hide that person (also hidden in Immich); *Show hidden people* brings them back.

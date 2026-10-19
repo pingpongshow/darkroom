@@ -31,13 +31,38 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(returned.waitForExistence(timeout: 10))
         XCTAssertTrue(returned.isHittable, "Grid returns to the photo you were on")
 
-        // Edit button opens Develop with labelled tools.
+        // Edit button opens Develop with labelled tools; Back goes to the photo, then to the grid.
         returned.click()
         any(app, "edit-photo").click()
         XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
         XCTAssertTrue(any(app, "develop-rotate-left").exists && any(app, "develop-flip").exists)
         UITestSupport.screenshot("fb-1-develop-tools", in: self)
-        app.typeKey(.escape, modifierFlags: [])
+        any(app, "back-to-grid").click()
+        XCTAssertTrue(any(app, "loupe").waitForExistence(timeout: 10), "Back from Develop shows the photo")
+        // Side arrows move between photos.
+        let next = any(app, "loupe-next"), previous = any(app, "loupe-previous")
+        XCTAssertTrue(previous.exists || next.exists, "Side arrows")
+        if previous.exists && previous.isEnabled { previous.click() } else { next.click() }
+        sleep(1)
+        let idLabel = app.staticTexts["loupe-asset-id"]
+        let current = idLabel.exists ? ((idLabel.value as? String) ?? idLabel.label) : ""
+        XCTAssertFalse(current.isEmpty, "Loupe exposes the shown photo")
+        any(app, "back-to-grid").click()
+        let shown = app.images["asset-\(current)"]
+        XCTAssertTrue(shown.waitForExistence(timeout: 10), "Grid shows the photo you were on")
+        sleep(1)
+        XCTAssertTrue(shown.isHittable, "…and it is on screen")
+
+        // Right-click on a Live Photo in the loupe plays it.
+        cells(app).firstMatch.doubleClick()
+        let play = any(app, "play-live")
+        var steps = 0
+        while !play.waitForExistence(timeout: 1.5) && steps < 30 { app.typeKey(.rightArrow, modifierFlags: []); steps += 1 }
+        if play.exists {
+            any(app, "loupe").rightClick()
+            XCTAssertTrue(any(app, "video-player").waitForExistence(timeout: 5), "Right-click plays the Live Photo")
+            app.typeKey(.escape, modifierFlags: [])   // closes the menu
+        }
         app.typeKey("g", modifierFlags: [])
 
         // Date bar: hover shows month and year; clicking a month scrolls there.

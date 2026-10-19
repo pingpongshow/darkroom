@@ -27,7 +27,8 @@ public actor ImagePipeline {
     public let client: ImmichClient
     public let directory: URL
     public var diskLimitBytes: Int
-    private let memory = NSCache<NSString, CGImageBox>()
+    /// NSCache is thread-safe, so the grid can read it synchronously while configuring cells.
+    nonisolated(unsafe) private let memory = NSCache<NSString, CGImageBox>()
     private var inFlight: [Key: Task<Data, Error>] = [:]
     private var running = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -54,7 +55,7 @@ public actor ImagePipeline {
     }
 
     /// Memory-only lookup for synchronous drawing (nil if not cached yet).
-    public func cachedImage(_ key: Key, maxPixel: Int? = nil) -> CGImage? {
+    nonisolated public func cachedImage(_ key: Key, maxPixel: Int? = nil) -> CGImage? {
         memory.object(forKey: "\(key.fileName)-\(maxPixel ?? 0)" as NSString)?.image
     }
 

@@ -198,7 +198,7 @@ struct LibraryShell: View {
                let content = event.window?.contentView {
                 let p = event.locationInWindow
                 let point = CGPoint(x: p.x, y: content.bounds.height - p.y)
-                if library.loupeFrame.contains(point) { library.playingLive = true }
+                        if library.loupeFrame.contains(point) { library.playingLive = true }
             }
             return event
         }
@@ -251,7 +251,7 @@ struct LibraryShell: View {
         switch event.keyCode {
         case 123 where library.mode != .grid: library.step(-1); return true  // ←
         case 124 where library.mode != .grid: library.step(1); return true   // →
-        case 53 where library.mode != .grid: library.mode = .grid; return true // Esc
+        case 53 where library.mode != .grid: library.back(); return true // Esc
         default: break
         }
         switch key {
@@ -292,7 +292,7 @@ struct LibraryShell: View {
             if develop.cropping { develop.cropping = false }
             else if develop.eyedropper { develop.eyedropper = false }
             else if develop.tool != .none { develop.tool = .none }
-            else { library.mode = .loupe }
+            else { library.back() }
             return true
         }
         if event.keyCode == 51 || event.keyCode == 117 { // Delete
@@ -345,8 +345,8 @@ struct TopBar: View {
     var body: some View {
         HStack(spacing: 14) {
             if library.mode != .grid && library.destination.showsGrid {
-                Button { library.mode = .grid } label: { Label("Grid", systemImage: "chevron.left") }
-                    .help("Back to the grid, where you left it (Esc or G)")
+                Button { library.back() } label: { Label("Back", systemImage: "chevron.left") }
+                    .help(library.mode == .develop ? "Back to the photo (Esc); your edits are saved" : "Back to the grid (Esc)")
                     .accessibilityIdentifier("back-to-grid")
             } else if library.canGoBack {
                 Button { library.goBack() } label: { Image(systemName: "chevron.left") }
