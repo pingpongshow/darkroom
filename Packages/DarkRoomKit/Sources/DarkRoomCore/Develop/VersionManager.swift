@@ -99,24 +99,54 @@ public struct VersionManager: Sendable {
             return .builtInEdit
         }
 
-        // Live Photos need both halves rendered (still + motion); until that path exists, never drop the motion.
-        if isLivePhoto { throw VersionError.livePhotoNotYetSupported }
-
         // Mac version. Built-in geometry is folded into the recipe (the version is rendered from the original file).
         progress?("Rendering…")
         let work = FileManager.default.temporaryDirectory.appending(path: "darkroom-render-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
         let base = (original.originalFileName as NSString).deletingPathExtension
-        let (_, ext) = RenderEngine.outputType(for: originalFile, hdr: recipe.hdr)
-        let output = work.appending(path: "\(base)-edit.\(ext)")
-        try RenderEngine.shared.export(original: originalFile, recipe: recipe, to: output)
-
-        progress?("Uploading…")
         let created = ImmichDate.parse(original.fileCreatedAt) ?? .now
-        let upload = try await client.upload(file: output, options: .init(filename: output.lastPathComponent,
-                                                                           fileCreatedAt: created, fileModifiedAt: .now))
-        let versionID = upload.id
+        let versionID: String
+
+        if original.type == .video {
+            // Video: re-encoded (or lossless rotate/trim), same container.
+            let output = work.appending(path: "\(base)-edit.\(originalFile.pathExtension.lowercased())")
+            try await VideoRenderer().export(originalFile, recipe: recipe, to: output) { p in progress?("Rendering video… \(Int(p * 100))%") }
+            progress?("Uploading…")
+            versionID = try await client.upload(file: output, options: .init(filename: output.lastPathComponent,
+                                                                             fileCreatedAt: created, fileModifiedAt: .now)).id
+        } else {
+            let (_, ext) = RenderEngine.outputType(for: originalFile, hdr: recipe.hdr)
+            let output = work.appending(path: "\(base)-edit.\(ext)")
+            try RenderEngine.shared.export(original: originalFile, recipe: recipe, to: output)
+            var motionID: String?
+            if isLivePhoto, let originalMotion = original.livePhotoVideoId {
+                // Live Photo: the motion clip gets the same edit, and both halves a fresh pairing id.
+                progress?("Rendering motion…")
+                let motionInfo = try await client.getAssetInfo(id: originalMotion)
+                let motionFile = try await client.downloadOriginal(assetID: originalMotion, to: work.appending(path: motionInfo.originalFileName))
+                let motionOut = work.appending(path: "\(base)-edit.mov")
+                try await VideoRenderer().export(motionFile, recipe: recipe.motionSafe, to: motionOut)
+                if let exiftool = RenderEngine.exiftoolURL {
+                    var fields = MetadataWriter.Fields()
+                    fields = MetadataWriter.fields(from: original)
+                    fields.contentIdentifier = UUID().uuidString
+                    let writer = MetadataWriter(exiftool: exiftool)
+                    try writer.write(fields, to: output, isVideo: false)
+                    try writer.write(fields, to: motionOut, isVideo: true)
+                }
+                progress?("Uploading…")
+                motionID = try await client.upload(file: motionOut, options: .init(filename: motionOut.lastPathComponent, fileCreatedAt: created,
+                                                                                    fileModifiedAt: .now, visibility: .hidden)).id
+            }
+            progress?("Uploading…")
+            versionID = try await client.upload(file: output, options: .init(filename: output.lastPathComponent, fileCreatedAt: created,
+                                                                             fileModifiedAt: .now, livePhotoVideoID: motionID)).id
+            if let motionID, let originalMotion = original.livePhotoVideoId {
+                try await waitForAsset(versionID)
+                try await relinkLivePhoto(newStill: versionID, newMotion: motionID, oldStill: original.id, oldMotion: originalMotion)
+            }
+        }
         try await waitForAsset(versionID)
 
         progress?("Linking…")
@@ -162,7 +192,7 @@ public struct VersionManager: Sendable {
         registry.add(VersionRegistry.Entry(versionID: versionID, originalID: original.id, hidden: hidden))
         if let old = context.version {
             registry.remove(versionID: old.id)
-            try? await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [old.id]))
+            try? await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [old.id] + (old.livePhotoVideoId.map { [$0] } ?? [])))
         }
         return .version(versionID)
     }
@@ -178,7 +208,7 @@ public struct VersionManager: Sendable {
             _ = try? await client.createStack(body: StackCreateDto(assetIds: [record.originalID] + record.stackMembers))
         }
         registry.remove(versionID: version.id)
-        try await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [version.id]))
+        try await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [version.id] + (version.livePhotoVideoId.map { [$0] } ?? [])))
         try? await client.deleteAssetMetadata(id: record.originalID, key: Self.versionKey)
     }
 
@@ -202,6 +232,21 @@ public struct VersionManager: Sendable {
     func stackID(primary id: String) async -> String? {
         if let stack = try? await client.getAssetInfo(id: id).stack { return stack.id }
         return (try? await client.searchStacks(primaryAssetId: id))?.first?.id
+    }
+
+    /// Immich pairs stills and motion clips by Apple's content identifier during metadata extraction, which can
+    /// attach a new still to an old clip. Once extraction has run, both pairs are set explicitly.
+    func relinkLivePhoto(newStill: String, newMotion: String, oldStill: String, oldMotion: String) async throws {
+        for _ in 0..<60 {
+            let still = try? await client.getAssetInfo(id: newStill)
+            let motion = try? await client.getAssetInfo(id: newMotion)
+            if still?.hasMetadata == true, motion?.hasMetadata == true { break }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        _ = try await client.updateAsset(id: newStill, body: UpdateAssetDto(livePhotoVideoId: newMotion))
+        _ = try await client.updateAsset(id: oldStill, body: UpdateAssetDto(livePhotoVideoId: oldMotion))
+        try await client.updateAssets(body: AssetBulkUpdateDto(ids: [newMotion, oldMotion], visibility: .hidden))
     }
 
     func waitForAsset(_ id: String) async throws {

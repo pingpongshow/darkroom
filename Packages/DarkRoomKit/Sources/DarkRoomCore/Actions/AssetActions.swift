@@ -245,3 +245,20 @@ public struct AssetActions: Sendable {
         }
     }
 }
+
+extension AssetActions {
+    /// Make Still: unlinks the motion clip (Immich's own unlink) and moves it to Immich's trash.
+    /// Undo restores the clip and links it again.
+    public func makeStill(_ stillID: String) async throws -> UndoAction {
+        let still = try await client.getAssetInfo(id: stillID)
+        guard let motionID = still.livePhotoVideoId else { return UndoAction(name: "Make Still") {} }
+        // livePhotoVideoId must be sent as an explicit null to unlink.
+        _ = try await client.raw("PUT", "/assets/\(stillID)", body: JSONValue.object(["livePhotoVideoId": .null]))
+        try await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [motionID]))
+        return UndoAction(name: "Make Still") { [client] in
+            _ = try await client.restoreAssets(body: BulkIdsDto(ids: [motionID]))
+            _ = try await client.updateAsset(id: stillID, body: UpdateAssetDto(livePhotoVideoId: motionID))
+            try await client.updateAssets(body: AssetBulkUpdateDto(ids: [motionID], visibility: .hidden))
+        }
+    }
+}

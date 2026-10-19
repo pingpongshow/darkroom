@@ -79,6 +79,10 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     // Geometry
     public var geometry = Geometry()
 
+    // Video / Live Photo motion trim (seconds); nil = from the start / to the end.
+    public var trimStart: Double?
+    public var trimEnd: Double?
+
     // Lens corrections (manual; RAW lens profiles are in `raw.lensCorrection`).
     public var lens = LensCorrection()
 
@@ -110,6 +114,19 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     }
 
     var withoutSnapshots: EditRecipe { var r = self; r.snapshots = []; return r }
+
+    /// The recipe for a Live Photo's motion clip: the same look, without grain (which would flicker),
+    /// retouch spots or masks that need the still (brush / AI masks are kept off video).
+    public var motionSafe: EditRecipe {
+        var r = self
+        r.grainAmount = 0
+        r.retouch = []
+        r.masks = masks.filter { mask in !mask.components.contains { c in
+            switch c.kind { case .brush, .subject, .people, .background, .depthRange: true; default: false }
+        } }
+        r.redEye = false
+        return r
+    }
 
     // MARK: Nested types
 
@@ -323,7 +340,7 @@ extension EditRecipe {
         get("vignetteFeather", &vignetteFeather); get("grainAmount", &grainAmount); get("grainSize", &grainSize)
         get("grainRoughness", &grainRoughness); get("geometry", &geometry); get("snapshots", &snapshots)
         get("masks", &masks); get("retouch", &retouch); get("redEye", &redEye)
-        get("lens", &lens); get("calibration", &calibration); get("hdr", &hdr)
+        get("lens", &lens); get("trimStart", &trimStart); get("trimEnd", &trimEnd); get("calibration", &calibration); get("hdr", &hdr)
     }
 
     struct AnyKey: CodingKey {

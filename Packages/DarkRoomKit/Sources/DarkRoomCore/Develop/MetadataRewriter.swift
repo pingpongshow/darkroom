@@ -175,21 +175,6 @@ public struct MetadataRewriter: Sendable {
 
     private struct Replacement { let id: String; let undo: UndoAction }
 
-    /// Immich pairs stills and motion clips by Apple's content identifier when it extracts metadata, which can
-    /// attach the new still to the old clip. Once extraction has run, set both pairs explicitly.
-    private func relinkLivePhoto(newStill: String, newMotion: String, oldStill: String, oldMotion: String) async throws {
-        for _ in 0..<60 {
-            let still = try? await client.getAssetInfo(id: newStill)
-            let motion = try? await client.getAssetInfo(id: newMotion)
-            if still?.hasMetadata == true, motion?.hasMetadata == true { break }
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        try await Task.sleep(for: .milliseconds(500))
-        _ = try await client.updateAsset(id: newStill, body: UpdateAssetDto(livePhotoVideoId: newMotion))
-        _ = try await client.updateAsset(id: oldStill, body: UpdateAssetDto(livePhotoVideoId: oldMotion))
-        try await client.updateAssets(body: AssetBulkUpdateDto(ids: [newMotion, oldMotion], visibility: .hidden))
-    }
-
     /// Uploads a metadata-updated copy of `asset` and swaps it in.
     /// - hideNew: the new file starts hidden (an original under a Mac version).
     /// - keepOld: hide the superseded file (originals) instead of trashing it (DarkRoom's own versions).
@@ -227,7 +212,7 @@ public struct MetadataRewriter: Sendable {
         let newID = upload.id
         try await versions.waitForAsset(newID)
         if let newMotionID, let oldMotionID = asset.livePhotoVideoId {
-            try await relinkLivePhoto(newStill: newID, newMotion: newMotionID, oldStill: asset.id, oldMotion: oldMotionID)
+            try await versions.relinkLivePhoto(newStill: newID, newMotion: newMotionID, oldStill: asset.id, oldMotion: oldMotionID)
         }
 
         // Carry albums, favourite, shared links and stack membership, then the API-level metadata and edits.
