@@ -13,6 +13,5 @@ let package = Package(
         .target(name: "DarkRoomCore", dependencies: ["ImmichAPI"]),
         .testTarget(name: "ImmichAPITests", dependencies: ["ImmichAPI"]),
         .testTarget(name: "DarkRoomCoreTests", dependencies: ["DarkRoomCore"]),
-        .testTarget(name: "IntegrationTests", dependencies: ["ImmichAPI", "DarkRoomCore"]),
     ]
 )

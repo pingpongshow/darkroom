@@ -138,7 +138,7 @@ The full **[user guide](docs/UserGuide.md)** covers everything.
 brew install xcodegen
 xcodegen generate                                   # creates DarkRoom.xcodeproj from project.yml
 open DarkRoom.xcodeproj                             # build and run the DarkRoom scheme
-(cd Packages/DarkRoomKit && swift test)             # unit tests (integration tests need a test server)
+(cd Packages/DarkRoomKit && swift test)             # unit tests
 ```
 
 | Path | Contents |
@@ -146,8 +146,7 @@ open DarkRoom.xcodeproj                             # build and run the DarkRoom
 | `App/` | The macOS app (SwiftUI + AppKit) |
 | `Packages/DarkRoomKit/` | `ImmichAPI` (client generated from Immich's OpenAPI spec, media, live events) and `DarkRoomCore` (accounts, library, editing engine, versions, import, export) |
 | `tools/generate-immich-api.py` | Regenerates the API client from an Immich release's OpenAPI spec |
-| `TestServer/` | Docker Compose definition and seeding script for a disposable stock Immich test server |
-| `scripts/` | Test runners, test-server tunnel, release script, secret guard |
+| `scripts/` | Unit-test runner, release script, secret guard |
 | `docs/` | [User guide](docs/UserGuide.md), [release process](docs/Releasing.md), release notes |
 
 The editing engine uses Core Image on Metal in a linear Display P3 working space, `CIRAWFilter` for RAW files and

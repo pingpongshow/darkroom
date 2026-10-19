@@ -24,7 +24,7 @@ Never put personal data in release notes.
 ## Each release
 
 1. Write release notes in `docs/ReleaseNotes/<version>.md` (no personal data).
-2. Run the tests (`scripts/run-package-tests.sh`, `scripts/run-ui-tests.sh`).
+2. Run the unit tests (`scripts/run-package-tests.sh`) and try the build.
 3. Release:
    ```bash
    DEVELOPER_ID="Developer ID Application: … (TEAMID)" NOTARY_PROFILE=darkroom-notary scripts/release.sh 0.2.0

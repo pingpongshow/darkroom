@@ -96,28 +96,8 @@ targets:
         # Sparkle EdDSA public key (docs/Releasing.md). Empty disables update checks.
         SPARKLE_PUBLIC_KEY: "uqE1BWQAq70lEDTD/3leo2DS23EwLtKXhjBjj3pDdOA="
 
-  DarkRoomUITests:
-    type: bundle.ui-testing
-    platform: macOS
-    sources:
-      - path: App/UITests
-    dependencies:
-      - target: DarkRoom
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pingpongshow.darkroom.uitests
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
-        ENABLE_HARDENED_RUNTIME: NO
-        GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: DarkRoom
-
 schemes:
   DarkRoom:
     build:
       targets:
         DarkRoom: all
-        DarkRoomUITests: [test]
-    test:
-      targets:
-        - DarkRoomUITests

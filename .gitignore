@@ -9,7 +9,6 @@ Local.xcconfig
 .env
 .env.*
 !.env.example
-/TestServer/.secrets/
 
 # Xcode / SwiftPM
 build/
