@@ -97,6 +97,9 @@ struct ActionsIntegrationTests {
         let tagUndo = try await actions.tag(targets, tagIDs: [tag.id])
         #expect(try await actions.details(targets).allSatisfy { ($0.tags ?? []).contains { $0.id == tag.id } })
         try await tagUndo.run()
+        // Stays removed even if a pending Immich sidecar job briefly puts the tag back.
+        #expect(try await eventually { try await actions.details(targets).allSatisfy { !($0.tags ?? []).contains { $0.id == tag.id } } })
+        try await Task.sleep(for: .seconds(11))
         #expect(try await actions.details(targets).allSatisfy { !($0.tags ?? []).contains { $0.id == tag.id } })
         // Deleting the parent removes its children.
         for t in try await client.getAllTags() where t.value == "DarkRoom" { try await client.deleteTag(id: t.id) }

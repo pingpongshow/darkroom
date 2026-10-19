@@ -8,6 +8,7 @@ DarkRoom is a Mac app for your Immich photo library, with Lightroom-style cullin
 - Create a DarkRoom PIN (4–6 digits). Next time, pick your name and enter the PIN, or use Touch ID.
 - **Lock** (⌃⌘L) or **Switch User** (⇧⌘U) at any time. After five wrong PINs, the Immich password is required.
 - Preferences ▸ Accounts: auto-lock after inactivity, lock when the Mac sleeps, Touch ID, change PIN, sign out.
+- **Read-only mode** (Preferences ▸ Accounts): browse, search, Quick Look and export, but DarkRoom refuses every change to Immich (a *Read-only* badge shows in the title bar). Turn it on when you first connect an existing library.
 
 ## Browsing
 
@@ -64,6 +65,10 @@ JPEG, HEIC, PNG, TIFF or original; size, quality, colour space, metadata (all / 
 
 "Upload to Immich", "Search Immich" and "Open Album" actions (DarkRoom must be open and unlocked).
 
+## Updates
+
+DarkRoom ▸ Check for Updates… (and automatic daily checks). Updates are signed and notarized, and come from the public DarkRoom releases page.
+
 ## Privacy
 
-DarkRoom talks only to your Immich server (and Apple's map tiles). Previews are cached in `~/Library/Caches/DarkRoom`; originals are downloaded only when you edit or export.
+DarkRoom talks only to your Immich server, Apple's map tiles and the update feed. Previews are cached in `~/Library/Caches/DarkRoom`; originals are downloaded only when you edit or export.

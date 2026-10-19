@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Errors surfaced by the Immich API layer.
 public enum ImmichError: Error, LocalizedError, Sendable, Equatable {
@@ -8,6 +9,8 @@ public enum ImmichError: Error, LocalizedError, Sendable, Equatable {
     case unauthorized
     case decoding(String, path: String)
     case unsupportedServerVersion(String)
+    /// The account is in read-only mode: DarkRoom doesn't change anything in Immich.
+    case readOnly
 
     public var errorDescription: String? {
         switch self {
@@ -17,7 +20,32 @@ public enum ImmichError: Error, LocalizedError, Sendable, Equatable {
         case .unauthorized: "Your session has expired. Please sign in again."
         case .decoding(let message, let path): "Unexpected response from \(path): \(message)"
         case .unsupportedServerVersion(let version): "Immich \(version) isn’t supported by this version of DarkRoom."
+        case .readOnly: "Read-only mode is on, so nothing was changed in Immich (Preferences ▸ Accounts)."
         }
+    }
+}
+
+/// Read-only mode: when on, the client refuses every request that could change the library
+/// (all non-GET requests except searches, duplicate checks, downloads and session handling).
+public final class WritePolicy: Sendable {
+    private let state = Mutex(false)
+    public init(readOnly: Bool = false) { state.withLock { $0 = readOnly } }
+    public var isReadOnly: Bool {
+        get { state.withLock { $0 } }
+        set { state.withLock { $0 = newValue } }
+    }
+
+    /// POST endpoints that only read.
+    static let readingPOSTs = ["/search/", "/assets/bulk-upload-check", "/download/", "/auth/login", "/auth/logout",
+                               "/auth/validateToken", "/auth/session/"]
+
+    public func check(method: String, path: String) throws {
+        guard isReadOnly else { return }
+        let method = method.uppercased()
+        if method == "GET" || method == "HEAD" { return }
+        let path = path.hasPrefix("/") ? path : "/" + path
+        if method == "POST", Self.readingPOSTs.contains(where: { path.hasPrefix($0) }) { return }
+        throw ImmichError.readOnly
     }
 }
 
@@ -38,6 +66,8 @@ public final class ImmichClient: Sendable {
     public let serverURL: URL
     public let credential: ImmichCredential
     let session: URLSession
+    /// Shared by clients derived with `with(credential:)`.
+    public let writes: WritePolicy
     /// Identifies DarkRoom in Immich's "Authorized devices" list.
     public static let deviceHeaders = ["devicemodel": "DarkRoom", "devicetype": "macOS"]
     public static var userAgent: String {
@@ -46,12 +76,14 @@ public final class ImmichClient: Sendable {
     }
 
     /// - Parameter serverURL: the server root, e.g. `http://localhost:2283` (with or without `/api`).
-    public init(serverURL: URL, credential: ImmichCredential = .none, session: URLSession = .darkRoomDefault) {
+    public init(serverURL: URL, credential: ImmichCredential = .none, session: URLSession = .darkRoomDefault,
+                writes: WritePolicy = WritePolicy()) {
         var url = serverURL
         if url.lastPathComponent == "api" { url.deleteLastPathComponent() }
         self.serverURL = url
         self.credential = credential
         self.session = session
+        self.writes = writes
     }
 
     public convenience init(server: String, credential: ImmichCredential = .none, session: URLSession = .darkRoomDefault) throws {
@@ -62,7 +94,7 @@ public final class ImmichClient: Sendable {
     }
 
     public func with(credential: ImmichCredential) -> ImmichClient {
-        ImmichClient(serverURL: serverURL, credential: credential, session: session)
+        ImmichClient(serverURL: serverURL, credential: credential, session: session, writes: writes)
     }
 
     public var apiURL: URL { serverURL.appending(path: "api") }
@@ -124,6 +156,7 @@ public final class ImmichClient: Sendable {
     }
 
     public func perform(_ request: URLRequest, path: String) async throws -> Data {
+        try writes.check(method: request.httpMethod ?? "GET", path: path)
         let data: Data
         let response: URLResponse
         do {

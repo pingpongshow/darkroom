@@ -97,7 +97,17 @@ final class AppState: ObservableObject {
     /// The open library (menu-bar status), set by the library view.
     weak var activeLibrary: LibraryModel? { didSet { objectWillChange.send() } }
 
+    /// Read-only mode per account (nothing is changed in Immich). Used first with a real library.
+    static func isReadOnly(_ accountID: UUID) -> Bool {
+        if ProcessInfo.processInfo.environment["DARKROOM_READ_ONLY"] == "1" { return true }
+        return UserDefaults.darkRoom.bool(forKey: "readOnly.\(accountID.uuidString)")
+    }
+    static func setReadOnly(_ on: Bool, for accountID: UUID) {
+        UserDefaults.darkRoom.set(on, forKey: "readOnly.\(accountID.uuidString)")
+    }
+
     func open(account: Account, client: ImmichClient) {
+        client.writes.isReadOnly = Self.isReadOnly(account.id)
         IntentAccount.activeClient = client
         session = UserSession(account: accounts.account(account.id) ?? account, client: client)
         phase = .library

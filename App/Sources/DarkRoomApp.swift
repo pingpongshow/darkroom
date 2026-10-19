@@ -31,6 +31,7 @@ struct DarkRoomApp: App {
             CommandMenu("Photo") { PhotoCommands() }
             CommandGroup(after: .sidebar) { ViewCommands() }
             CommandGroup(replacing: .help) { HelpCommands() }
+            CommandGroup(after: .appInfo) { UpdateCommands() }
         }
 
         MenuBarExtra("DarkRoom", systemImage: "camera.aperture") {
@@ -65,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = services
         NSUpdateDynamicServices()
         TipsSetup.configure()
+        _ = Updater.shared
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

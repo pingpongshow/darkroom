@@ -345,6 +345,11 @@ struct TopBar: View {
                     .accessibilityIdentifier("item-count")
             }
             Spacer()
+            if library.readOnly {
+                Label("Read-only", systemImage: "lock.doc").font(.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
+                    .help("Read-only mode: nothing is changed in Immich (Preferences ▸ Accounts)")
+                    .accessibilityIdentifier("read-only-badge")
+            }
             SearchField()
             if library.destination.showsGrid {
                 Picker("", selection: Binding(get: { library.mode == .develop ? ViewMode.develop : (library.mode == .grid ? .grid : .loupe) },

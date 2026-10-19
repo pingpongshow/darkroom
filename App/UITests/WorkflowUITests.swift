@@ -66,4 +66,19 @@ final class WorkflowUITests: XCTestCase {
         UITestSupport.screenshot("m8-4-shortcuts", in: self)
         app.typeKey(.escape, modifierFlags: [])
     }
+
+    /// Read-only mode (first use with a real library): the badge shows and changes are refused.
+    func testReadOnlyModeRefusesChanges() throws {
+        let app = UITestSupport.launch(extraEnvironment: ["DARKROOM_READ_ONLY": "1"])
+        try UITestSupport.signIn(app)
+        XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(any(app, "read-only-badge").exists)
+        cells(app).firstMatch.click()
+        app.typeKey("h", modifierFlags: [])
+        status(app, "Read-only mode", timeout: 15)
+        app.typeKey(.delete, modifierFlags: [])
+        status(app, "Read-only mode", timeout: 15)
+        XCTAssertTrue(cells(app).firstMatch.exists)
+        UITestSupport.screenshot("m9-1-read-only", in: self)
+    }
 }

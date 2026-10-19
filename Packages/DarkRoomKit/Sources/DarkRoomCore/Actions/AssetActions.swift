@@ -185,21 +185,25 @@ public struct AssetActions: Sendable {
 
     public func tag(_ ids: [String], tagIDs: [String]) async throws -> UndoAction {
         let before = try await details(ids)
+        TagRemoval.added(tagIDs, to: ids)
         _ = try await client.bulkTagAssets(body: TagBulkAssetsDto(assetIds: ids, tagIds: tagIDs))
         return UndoAction(name: "Add Tag") { [client] in
             for tagID in tagIDs {
                 // Only untag assets that didn't already have the tag.
                 let newly = before.filter { !($0.tags ?? []).contains { $0.id == tagID } }.map(\.id)
-                if !newly.isEmpty { _ = try await client.untagAssets(id: tagID, body: BulkIdsDto(ids: newly)) }
+                if !newly.isEmpty { try await TagRemoval.remove(tagID, from: newly, client: client) }
             }
         }
     }
 
     public func untag(_ ids: [String], tagID: String) async throws -> UndoAction {
-        let results = try await client.untagAssets(id: tagID, body: BulkIdsDto(ids: ids))
+        let results = try await TagRemoval.remove(tagID, from: ids, client: client)
         let removed = results.filter(\.success).map(\.id)
         return UndoAction(name: "Remove Tag") { [client] in
-            if !removed.isEmpty { _ = try await client.tagAssets(id: tagID, body: BulkIdsDto(ids: removed)) }
+            if !removed.isEmpty {
+                TagRemoval.added([tagID], to: removed)
+                _ = try await client.tagAssets(id: tagID, body: BulkIdsDto(ids: removed))
+            }
         }
     }
 

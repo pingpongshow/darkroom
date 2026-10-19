@@ -161,6 +161,13 @@ final class LibraryModel: ObservableObject {
         didSet { UserDefaults.darkRoom.set(autoAdvance, forKey: "autoAdvance") }
     }
     @Published var showFilterBar = false
+    /// Read-only mode (Preferences ▸ Accounts): the client refuses every change to Immich.
+    @Published var readOnly = false {
+        didSet {
+            client.writes.isReadOnly = readOnly
+            AppState.setReadOnly(readOnly, for: session.account.id)
+        }
+    }
     @Published var confirmTrashRejects = false
     /// Navigation history for Back (⌘[).
     private var history: [LibraryDestination] = []
@@ -187,6 +194,7 @@ final class LibraryModel: ObservableObject {
         self.session = session
         self.pipeline = ImagePipeline(client: session.client, accountID: session.account.id)
         self.timeline = TimelineStore(client: session.client, query: .photos)
+        self.readOnly = session.client.writes.isReadOnly
     }
 
     var client: ImmichClient { session.client }
@@ -384,6 +392,7 @@ final class LibraryModel: ObservableObject {
 
     /// Un-hides originals whose version was removed elsewhere, re-hides originals something un-hid.
     func reconcile() async {
+        guard !client.writes.isReadOnly else { return }
         let actions = await Reconciler(client: client, registry: develop.versions.registry).run()
         guard !actions.isEmpty else { return }
         let restored = actions.filter { if case .unhidOriginal = $0 { true } else { false } }.count

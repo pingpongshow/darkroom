@@ -47,6 +47,14 @@ struct PreferencesView: View {
                             get: { state.accounts.account(session.account.id)?.touchIDEnabled ?? false },
                             set: { try? state.accounts.setTouchID($0, for: session.account.id) }))
                             .disabled(!AccountManager.biometricsAvailable)
+                        Toggle("Read-only (browse only, nothing is changed in Immich)", isOn: Binding(
+                            get: { state.activeLibrary?.readOnly ?? AppState.isReadOnly(session.account.id) },
+                            set: { on in
+                                if let library = state.activeLibrary { library.readOnly = on }
+                                else { AppState.setReadOnly(on, for: session.account.id); session.client.writes.isReadOnly = on }
+                                state.objectWillChange.send()
+                            }))
+                            .accessibilityIdentifier("read-only-toggle")
                         Button("Change DarkRoom PIN…") { state.phase = .setPIN(session.account.id) }
                         Button("Sign Out of Immich", role: .destructive) { Task { await state.signOutCurrent() } }
                     }

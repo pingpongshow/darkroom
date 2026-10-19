@@ -15,17 +15,17 @@ struct WorkflowIntegrationTests {
             Set((try await client.getAssetInfo(id: id).tags ?? []).map(\.value).filter { $0.hasPrefix("Culling/") })
         }
         let pick = try await culling.setFlag(.pick, on: ids)
-        #expect(try await flags(ids[0]) == ["Culling/Pick"])
+        #expect(try await eventually { try await flags(ids[0]) == ["Culling/Pick"] })
         let reject = try await culling.setFlag(.reject, on: [ids[0]])
-        #expect(try await flags(ids[0]) == ["Culling/Reject"])
+        #expect(try await eventually { try await flags(ids[0]) == ["Culling/Reject"] })
         #expect(try await culling.assets(flagged: .reject).map(\.id).contains(ids[0]))
         try await reject.run()
-        #expect(try await flags(ids[0]) == ["Culling/Pick"])
+        #expect(try await eventually { try await flags(ids[0]) == ["Culling/Pick"] })
         let clear = try await culling.setFlag(nil, on: ids)
-        #expect(try await flags(ids[0]).isEmpty)
+        #expect(try await eventually { try await flags(ids[0]).isEmpty })
         _ = clear
         try await pick.run()   // back to unflagged (the state before picking)
-        #expect(try await flags(ids[1]).isEmpty)
+        #expect(try await eventually { try await flags(ids[1]).isEmpty })
         for t in try await client.getAllTags() where t.value == "Culling" { try await client.deleteTag(id: t.id) }
     }
 

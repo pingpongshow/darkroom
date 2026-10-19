@@ -51,3 +51,13 @@ enum TestServer {
         return anonymous.with(credential: .session(login.accessToken))
     }
 }
+
+/// Polls until the condition holds (Immich applies some changes through background jobs).
+func eventually(timeout: Double = 20, _ condition: () async throws -> Bool) async throws -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if try await condition() { return true }
+        try await Task.sleep(for: .milliseconds(500))
+    }
+    return try await condition()
+}

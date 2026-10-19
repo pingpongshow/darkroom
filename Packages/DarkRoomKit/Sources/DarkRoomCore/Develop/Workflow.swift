@@ -44,14 +44,16 @@ public struct Culling: Sendable {
     func apply(_ flag: CullFlag?, _ ids: [String], pick: String, reject: String) async throws {
         switch flag {
         case .pick:
-            _ = try await client.untagAssets(id: reject, body: BulkIdsDto(ids: ids))
+            try await TagRemoval.remove(reject, from: ids, client: client)
+            TagRemoval.added([pick], to: ids)
             _ = try await client.tagAssets(id: pick, body: BulkIdsDto(ids: ids))
         case .reject:
-            _ = try await client.untagAssets(id: pick, body: BulkIdsDto(ids: ids))
+            try await TagRemoval.remove(pick, from: ids, client: client)
+            TagRemoval.added([reject], to: ids)
             _ = try await client.tagAssets(id: reject, body: BulkIdsDto(ids: ids))
         case nil:
-            _ = try await client.untagAssets(id: pick, body: BulkIdsDto(ids: ids))
-            _ = try await client.untagAssets(id: reject, body: BulkIdsDto(ids: ids))
+            try await TagRemoval.remove(pick, from: ids, client: client)
+            try await TagRemoval.remove(reject, from: ids, client: client)
         }
     }
 

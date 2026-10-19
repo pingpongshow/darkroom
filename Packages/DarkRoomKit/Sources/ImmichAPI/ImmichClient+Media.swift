@@ -111,6 +111,7 @@ public extension ImmichClient {
     /// `POST /assets` - uploads a file (streamed from disk). Returns the new (or duplicate) asset id.
     func upload(file: URL, options: UploadOptions,
                 progress: (@Sendable (Double) -> Void)? = nil) async throws -> AssetMediaResponseDto {
+        try writes.check(method: "POST", path: "/assets")
         let boundary = "DarkRoom-\(UUID().uuidString)"
         let body = try MultipartFile.build(file: file, boundary: boundary, options: options)
         defer { try? FileManager.default.removeItem(at: body) }
