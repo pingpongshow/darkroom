@@ -23,6 +23,19 @@ everything, cull and organise, edit RAW files and photos, and import from any di
 server through its public API**: nothing on the server is modified or replaced, and Immich web and the phone apps
 keep working exactly as before and see every change instantly.
 
+<p align="center">
+  <img src="docs/screenshots/photo.jpg" alt="DarkRoom showing a photo with the info panel" width="900">
+</p>
+
+| | |
+|---|---|
+| <img src="docs/screenshots/editor.jpg" alt="The editor with labelled tools and adjustment panels"> | <img src="docs/screenshots/grid.jpg" alt="The photo grid with the date bar and info panel"> |
+| **Edit** with Crop, Rotate, Heal, Masks and every adjustment panel | **Browse** by month with the date bar, details beside |
+| <img src="docs/screenshots/map.jpg" alt="The world map of photo locations"> | <img src="docs/screenshots/albums.jpg" alt="Albums"> |
+| **Map** of where every photo was taken | **Albums**, shared albums and Memories |
+
+<sub>Screenshots use generated demo landscapes.</sub>
+
 ## Download
 
 **[Download the latest version](https://github.com/pingpongshow/darkroom/releases/latest)**: open the DMG and drag
