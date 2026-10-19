@@ -85,9 +85,9 @@ final class AssetDetailsModel: ObservableObject {
     @Published var albums: [AlbumResponseDto] = []
     private var loadedID: String?
 
-    func load(_ id: String?, client: ImmichClient) async {
+    func load(_ id: String?, client: ImmichClient, force: Bool = false) async {
         guard let id else { asset = nil; return }
-        guard id != loadedID else { return }
+        guard force || id != loadedID else { return }
         loadedID = id
         asset = try? await client.getAssetInfo(id: id)
         albums = (try? await client.getAllAlbums(assetId: id)) ?? []
@@ -156,6 +156,8 @@ struct InfoPanel: View {
     @EnvironmentObject var library: LibraryModel
     @StateObject private var details = AssetDetailsModel()
     @State private var histogram: Histogram?
+    @State private var descriptionDraft = ""
+    @FocusState private var editingDescription: Bool
 
     var body: some View {
         ScrollView {
@@ -174,6 +176,17 @@ struct InfoPanel: View {
                             if let fs = ExifText.fileSize(e) { row("File size", fs) }
                         }
                         row("Type", asset.livePhotoVideoId != nil ? "Live Photo" : asset.type.rawValue.capitalized)
+                        HStack(spacing: 12) {
+                            Button { library.toggleFavorite() } label: {
+                                Image(systemName: asset.isFavorite ? "heart.fill" : "heart")
+                                    .foregroundStyle(asset.isFavorite ? Color.pink : Theme.textSecondary)
+                            }
+                            .buttonStyle(.borderless).help("Favorite (H)").accessibilityIdentifier("info-favorite")
+                            Button("Date…") { library.sheet = .dateTime(library.targetIDs) }.buttonStyle(.link)
+                                .accessibilityIdentifier("info-edit-date")
+                            Button("Location…") { library.sheet = .geotag(library.targetIDs) }.buttonStyle(.link)
+                        }
+                        .padding(.top, 2)
                     }
                     if let e = asset.exifInfo, e.make != nil || e.model != nil {
                         section("Camera") {
@@ -204,17 +217,32 @@ struct InfoPanel: View {
                             ForEach(details.albums, id: \.id) { Text($0.albumName).foregroundStyle(Theme.text) }
                         }
                     }
+                    if let tags = asset.tags, !tags.isEmpty {
+                        section("Tags") {
+                            Text(tags.map(\.value).filter { !$0.hasPrefix("Culling/") }.joined(separator: ", ")).foregroundStyle(Theme.text)
+                        }
+                    }
                     section("Description") {
-                        Text(asset.exifInfo?.description?.isEmpty == false ? asset.exifInfo!.description! : "No description")
-                            .foregroundStyle(asset.exifInfo?.description?.isEmpty == false ? Theme.text : Theme.textTertiary)
+                        TextField("Add a description", text: $descriptionDraft, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .lineLimit(1...6)
+                            .focused($editingDescription)
+                            .onSubmit(saveDescription)
+                            .onChange(of: editingDescription) { _, editing in if !editing { saveDescription() } }
+                            .accessibilityIdentifier("info-description")
                     }
                     section("Rating") {
                         HStack(spacing: 2) {
                             ForEach(1...5, id: \.self) { star in
-                                Image(systemName: star <= (asset.exifInfo?.rating ?? 0) ? "star.fill" : "star")
-                                    .foregroundStyle(Theme.textSecondary)
+                                let rating = asset.exifInfo?.rating ?? 0
+                                Button { library.setRating(star == rating ? 0 : star) } label: {
+                                    Image(systemName: star <= rating ? "star.fill" : "star").foregroundStyle(Theme.textSecondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityIdentifier("info-star-\(star)")
                             }
                         }
+                        .help("Rate (0–5)")
                     }
                 } else if library.focusedAssetID == nil {
                     Text("Select a photo to see its details.").foregroundStyle(Theme.textTertiary)
@@ -228,8 +256,21 @@ struct InfoPanel: View {
         .accessibilityIdentifier("info-panel")
         .task(id: library.focusedAssetID) {
             await details.load(library.focusedAssetID, client: library.client)
+            descriptionDraft = details.asset?.exifInfo?.description ?? ""
             await loadHistogram()
         }
+        .task(id: library.detailsRevision) {
+            guard library.detailsRevision > 0 else { return }
+            try? await Task.sleep(for: .milliseconds(400))
+            await details.load(library.focusedAssetID, client: library.client, force: true)
+            if !editingDescription { descriptionDraft = details.asset?.exifInfo?.description ?? "" }
+        }
+    }
+
+    private func saveDescription() {
+        guard let asset = details.asset, descriptionDraft != (asset.exifInfo?.description ?? "") else { return }
+        let ids = [asset.id], text = descriptionDraft
+        library.perform("Description", ids: ids, change: .metadata(ids: ids)) { try await $0.setDescription(ids, text) }
     }
 
     private func loadHistogram() async {

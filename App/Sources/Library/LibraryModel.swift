@@ -126,6 +126,18 @@ final class LibraryModel: ObservableObject {
     private var navigatingBack = false
     /// Every geotagged timeline asset, loaded on first use of the map.
     private var mapStore: TimelineStore?
+    /// The window's undo manager (set by the shell) for ⌘Z of organising actions.
+    weak var undoManager: UndoManager?
+    /// Bumped when asset details change so the info panel reloads.
+    @Published var detailsRevision = 0
+    @Published var sheet: LibrarySheet?
+    /// The user's albums (owned and shared), for Add to Album and the Albums view.
+    @Published var albums: [AlbumResponseDto] = []
+    @Published var copiedLocation: CLLocationCoordinate2DBox?
+    var recentAlbumIDs: [String] {
+        get { UserDefaults.darkRoom.stringArray(forKey: "recentAlbums-\(session.account.id)") ?? [] }
+        set { UserDefaults.darkRoom.set(Array(newValue.prefix(10)), forKey: "recentAlbums-\(session.account.id)"); objectWillChange.send() }
+    }
 
     private var socket: ImmichSocket?
     private var socketTask: Task<Void, Never>?
@@ -138,7 +150,14 @@ final class LibraryModel: ObservableObject {
 
     var client: ImmichClient { session.client }
 
+    func loadAlbums() async {
+        if let all = try? await client.getAllAlbums() {
+            albums = all.sorted { $0.albumName.localizedCaseInsensitiveCompare($1.albumName) == .orderedAscending }
+        }
+    }
+
     func start() async {
+        Task { await loadAlbums() }
         await timeline.reload()
         loadRemainingInBackground(timeline)
         startLiveUpdates()
@@ -290,6 +309,8 @@ final class LibraryModel: ObservableObject {
         switch event {
         case .uploadSuccess, .assetRestore, .stackUpdate:
             if !timeline.isStatic { await timeline.reload() }
+        case .albumUpdate:
+            await loadAlbums()
         case .assetUpdate(let id), .assetEditReady(let id):
             await timeline.refresh(assetIDs: [id])
         case .assetTrash(let ids):

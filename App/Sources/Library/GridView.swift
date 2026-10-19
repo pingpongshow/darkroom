@@ -69,6 +69,15 @@ struct GridView: NSViewRepresentable {
             collection.dataSource = self
             collection.delegate = self
             collection.onOpen = { [weak self] in self?.openSelected() }
+            collection.menuProvider = { [weak self] point in
+                guard let self, let collection = self.collection else { return nil }
+                if let path = collection.indexPathForItem(at: point), !collection.selectionIndexPaths.contains(path) {
+                    collection.selectionIndexPaths = [path]
+                    self.selectionChanged()
+                }
+                guard !self.library.selection.isEmpty else { return nil }
+                return MenuEntry.nsMenu(self.library.assetMenu(includeOpen: true))
+            }
             collection.onDoubleClick = { [weak self] point in
                 guard let self, let collection = self.collection, let path = collection.indexPathForItem(at: point),
                       let asset = self.asset(at: path) else { return }
@@ -160,7 +169,7 @@ struct GridView: NSViewRepresentable {
         func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) { selectionChanged() }
         func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) { selectionChanged() }
 
-        private func selectionChanged() {
+        func selectionChanged() {
             guard !updatingSelection, let collection else { return }
             let ids = Set(collection.selectionIndexPaths.compactMap { asset(at: $0)?.id })
             library.selection = ids
@@ -175,6 +184,11 @@ struct GridView: NSViewRepresentable {
 final class GridCollectionView: NSCollectionView {
     var onOpen: (() -> Void)?
     var onDoubleClick: ((NSPoint) -> Void)?
+    var menuProvider: ((NSPoint) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?(convert(event.locationInWindow, from: nil))
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -267,7 +281,7 @@ final class ThumbnailItem: NSCollectionViewItem {
         if asset.isPanorama { flags.append("360°") }
         if let count = asset.stackCount { flags.append("◫ \(count)") }
         icons.stringValue = flags.joined(separator: "  ")
-        badge.stringValue = asset.duration.map(Self.format) ?? ""
+        badge.stringValue = asset.isVideo ? (asset.duration.map(Self.format) ?? "") : ""
 
         let scale = view.window?.backingScaleFactor ?? 2
         let wanted = Int(cellSize * scale)

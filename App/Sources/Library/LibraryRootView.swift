@@ -34,7 +34,10 @@ final class LibraryHolder: ObservableObject {
 struct LibraryShell: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var library: LibraryModel
+    @Environment(\.undoManager) private var undoManager
     @State private var keyMonitor: Any?
+    @State private var confirmEmptyTrash = false
+    @State private var trashCount = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,11 +57,31 @@ struct LibraryShell: View {
             }
             if let message = library.statusMessage {
                 Text(message).font(.caption).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("status-message")
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 4)
                     .background(Theme.panel)
             }
         }
         .background(Theme.background)
+        .focusedSceneObject(library)
+        .sheet(item: $library.sheet) { sheet in
+            LibrarySheetView(sheet: sheet).environmentObject(library)
+        }
+        .confirmationDialog("Permanently delete \(trashCount) item\(trashCount == 1 ? "" : "s")?", isPresented: $confirmEmptyTrash) {
+            Button("Delete Permanently", role: .destructive) { library.emptyTrash() }
+                .accessibilityIdentifier("confirm-empty-trash")
+        } message: {
+            Text("Everything in the trash is deleted from Immich for all devices. This can’t be undone.")
+        }
+        .onChange(of: library.sheet?.id) { _, id in
+            if id == "emptyTrash", case .confirmEmptyTrash(let count) = library.sheet {
+                library.sheet = nil
+                trashCount = count
+                confirmEmptyTrash = true
+            }
+        }
+        .onAppear { library.undoManager = undoManager }
+        .onChange(of: undoManager) { _, manager in library.undoManager = manager }
         .onAppear { installKeyMonitor() }
         .onDisappear { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
     }
@@ -67,15 +90,19 @@ struct LibraryShell: View {
         if library.destination.showsGrid {
             switch library.mode {
             case .grid:
-                ZStack(alignment: .trailing) {
+                VStack(spacing: 0) {
+                    if library.destination == .trash { TrashBar(timeline: library.timeline) }
+                    ZStack(alignment: .trailing) {
                     GridView(timeline: library.timeline)
                     DateScrubber(timeline: library.timeline).frame(width: 64)
                 }
                 .overlay {
                     TimelineStatusOverlay(timeline: library.timeline, destination: library.destination)
                 }
+                }
             default:
                 LoupeView()
+                    .contextMenu { MenuEntriesView(entries: library.assetMenu(includeOpen: false)) }
             }
         } else {
             switch library.destination {
@@ -105,8 +132,6 @@ struct LibraryShell: View {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if mods.contains(.command) {
             switch key {
-            case "f": NotificationCenter.default.post(name: .focusSearch, object: nil); return true
-            case "[": library.goBack(); return true
             case "=", "+": zoom(1.25); return true
             case "-": zoom(0.8); return true
             default: return false
@@ -123,6 +148,14 @@ struct LibraryShell: View {
             return true
         }
         guard mods.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
+        if library.destination.showsGrid, !library.targetIDs.isEmpty, library.destination != .trash {
+            switch key {
+            case "h": library.toggleFavorite(); return true
+            case "0", "1", "2", "3", "4", "5": library.setRating(Int(key)!); return true
+            default: break
+            }
+            if event.keyCode == 51 || event.keyCode == 117 { library.trashSelection(); return true } // ⌫ / ⌦
+        }
         switch event.keyCode {
         case 123 where library.mode != .grid: library.step(-1); return true  // ←
         case 124 where library.mode != .grid: library.step(1); return true   // →
@@ -293,6 +326,29 @@ extension Calendar {
         calendar.timeZone = TimeZone(identifier: "UTC")!
         return calendar
     }()
+}
+
+/// Trash header: count, Restore All, Empty Trash (with confirmation).
+struct TrashBar: View {
+    @EnvironmentObject var library: LibraryModel
+    @ObservedObject var timeline: TimelineStore
+
+    var body: some View {
+        HStack {
+            Image(systemName: "info.circle").foregroundStyle(Theme.textTertiary)
+            Text("Items in the trash are deleted permanently after the period set on your Immich server.")
+                .font(.caption).foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Button("Restore All") { library.restoreAllTrash() }
+                .disabled(timeline.totalCount == 0)
+                .accessibilityIdentifier("restore-all")
+            Button("Empty Trash…") { library.sheet = .confirmEmptyTrash(timeline.totalCount) }
+                .disabled(timeline.totalCount == 0)
+                .accessibilityIdentifier("empty-trash")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Theme.panel)
+    }
 }
 
 /// Loading spinner / empty message over the grid.

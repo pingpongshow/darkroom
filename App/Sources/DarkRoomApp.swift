@@ -25,6 +25,8 @@ struct DarkRoomApp: App {
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                     .disabled(state.session == nil)
             }
+            CommandMenu("Photo") { PhotoCommands() }
+            CommandGroup(after: .sidebar) { ViewCommands() }
         }
 
         Settings {
@@ -64,5 +66,35 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: state.phase)
+    }
+}
+
+/// Menu-bar Photo menu: the same actions as the right-click menu, for the current selection.
+struct PhotoCommands: View {
+    @FocusedObject private var library: LibraryModel?
+
+    var body: some View {
+        if let library {
+            MenuEntriesView(entries: library.assetMenu(includeOpen: false), bindShortcuts: true)
+            Divider()
+            Button("New Album…") { library.sheet = .newAlbum(library.targetIDs) }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+        } else {
+            Text("Sign in to organise photos")
+        }
+    }
+}
+
+struct ViewCommands: View {
+    @FocusedObject private var library: LibraryModel?
+
+    var body: some View {
+        Button("Find") { NotificationCenter.default.post(name: .focusSearch, object: nil) }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(library == nil)
+        Button("Back") { library?.goBack() }
+            .keyboardShortcut("[", modifiers: .command)
+            .disabled(library?.canGoBack != true)
+        Divider()
     }
 }
