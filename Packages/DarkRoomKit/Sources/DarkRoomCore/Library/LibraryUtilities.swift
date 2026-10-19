@@ -152,6 +152,13 @@ public enum LibraryUtilities {
             .sorted { $0.data.year > $1.data.year }
     }
 
+    /// Every memory Immich has made (newest first), for the Memories view.
+    public static func allMemories(_ client: ImmichClient) async throws -> [MemoryResponseDto] {
+        try await client.searchMemories()
+            .filter { !$0.assets.isEmpty && $0.deletedAt == nil }
+            .sorted { $0.memoryAt > $1.memoryAt }
+    }
+
     // MARK: Locked folder (Immich's own PIN, separate from the DarkRoom PIN)
 
     public enum LockedState: Sendable, Equatable { case needsSetup, locked, unlocked }

@@ -5,50 +5,75 @@ import DarkRoomCore
 
 // MARK: Memories
 
-/// "On this day" cards above the Photos grid.
-struct MemoriesStrip: View {
+/// Memories (Collections ▸ Memories): today's "On this day" cards first, then every earlier memory.
+struct MemoriesView: View {
     @EnvironmentObject var library: LibraryModel
-    @State private var memories: [MemoryResponseDto] = []
-    @AppStorage("showMemories", store: .darkRoom) private var show = true
+    @State private var today: [MemoryResponseDto] = []
+    @State private var earlier: [MemoryResponseDto] = []
+    @State private var loaded = false
 
     var body: some View {
-        if show && !memories.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(memories, id: \.id) { memory in
-                        Button { open(memory) } label: {
-                            Color.clear.frame(width: 150, height: 96)
-                                .overlay {
-                                    if let first = memory.assets.first {
-                                        PipelineImage(asset: TimelineAsset(first), size: .thumbnail, maxPixel: 320)
-                                    }
-                                }
-                                .clipped()
-                                .overlay(alignment: .bottomLeading) {
-                                    Text(title(memory)).font(.caption.weight(.semibold)).foregroundStyle(.white)
-                                        .shadow(radius: 3).padding(6)
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("memory-\(memory.data.year)")
-                    }
-                    Button { show = false } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.borderless).help("Hide memories (turn back on in Preferences)")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if loaded && today.isEmpty && earlier.isEmpty {
+                    Text("No memories yet. Immich creates them each day from photos taken on this date in earlier years.")
+                        .foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity).padding(60)
+                        .accessibilityIdentifier("memories-empty")
                 }
-                .padding(.horizontal, 12).padding(.vertical, 8)
+                if !today.isEmpty { section("On This Day", today) }
+                if !earlier.isEmpty { section("Earlier", earlier) }
             }
-            .background(Theme.panel)
-        } else {
-            Color.clear.frame(height: 0)
-                .task { memories = (try? await LibraryUtilities.memoriesForToday(library.client)) ?? [] }
+            .padding(18)
+        }
+        .background(Theme.gridBackground)
+        .accessibilityIdentifier("memories-view")
+        .task {
+            let client = library.client
+            today = (try? await LibraryUtilities.memoriesForToday(client)) ?? []
+            let shown = Set(today.map(\.id))
+            earlier = ((try? await LibraryUtilities.allMemories(client)) ?? []).filter { !shown.contains($0.id) }
+            loaded = true
         }
     }
 
+    private func section(_ title: String, _ memories: [MemoryResponseDto]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.headline).foregroundStyle(Theme.text)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
+                ForEach(memories, id: \.id) { memory in card(memory) }
+            }
+        }
+    }
+
+    private func card(_ memory: MemoryResponseDto) -> some View {
+        Button { open(memory) } label: {
+            Color.clear.frame(height: 140)
+                .overlay {
+                    if let first = memory.assets.first {
+                        PipelineImage(asset: TimelineAsset(first), size: .thumbnail, maxPixel: 480)
+                    }
+                }
+                .clipped()
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title(memory)).font(.callout.weight(.semibold))
+                        Text("\(memory.assets.count) item\(memory.assets.count == 1 ? "" : "s")").font(.caption2)
+                    }
+                    .foregroundStyle(.white).shadow(radius: 3).padding(8)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .help("Play as a slideshow")
+        .accessibilityIdentifier("memory-\(memory.id)")
+    }
+
     private func title(_ memory: MemoryResponseDto) -> String {
-        let years = Calendar.current.component(.year, from: .now) - memory.data.year
         if let name = memory.data.personName, memory.type == .birthday { return "\(name)’s birthday" }
-        return years == 1 ? "1 year ago" : "\(years) years ago"
+        let years = Calendar.current.component(.year, from: .now) - memory.data.year
+        let date = ImmichDate.parse(memory.memoryAt).map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? ""
+        let ago = years == 1 ? "1 year ago" : "\(years) years ago"
+        return date.isEmpty ? ago : "\(date), \(ago)"
     }
 
     private func open(_ memory: MemoryResponseDto) {

@@ -11,8 +11,7 @@ public actor OriginalCache {
 
     public init(client: ImmichClient, accountID: UUID, limitBytes: Int = 8 << 30) {
         self.client = client
-        directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "DarkRoom/\(accountID.uuidString)/originals")
+        directory = CacheLocation.account(accountID).appending(path: "originals")
         self.limitBytes = limitBytes
     }
 

@@ -31,13 +31,10 @@ final class UtilitiesUITests: XCTestCase {
             UITestSupport.screenshot(shot, in: self)
         }
 
-        // Folders → a folder's photos.
-        UITestSupport.sidebar(app, "Folders").click()
-        let folder = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'folder-'")).firstMatch
-        XCTAssertTrue(folder.waitForExistence(timeout: 10))
-        UITestSupport.screenshot("m3c-4-folders", in: self)
-        folder.click()
-        XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 20), "Folder shows its photos")
+        // Memories (Collections) replaces the strip above Photos; Folders is no longer in the sidebar.
+        UITestSupport.sidebar(app, "Memories").click()
+        XCTAssertTrue(any(app, "memories-view").waitForExistence(timeout: 10))
+        XCTAssertFalse(any(app, "sidebar-Folders").exists)
 
         // Tags: create, then delete.
         UITestSupport.sidebar(app, "Tags").click()

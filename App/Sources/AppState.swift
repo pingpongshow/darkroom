@@ -134,6 +134,7 @@ final class AppState: ObservableObject {
         guard let id = session?.account.id else { return }
         lock()
         await accounts.signOut(id)
+        CacheLocation.clear(id)
     }
 
     // MARK: Auto-lock

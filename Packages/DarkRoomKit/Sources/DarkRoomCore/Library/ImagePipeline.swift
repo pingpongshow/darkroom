@@ -36,8 +36,7 @@ public actor ImagePipeline {
     public init(client: ImmichClient, accountID: UUID, diskLimitBytes: Int = 2 << 30, maxConcurrent: Int = 10,
                 directory: URL? = nil) {
         self.client = client
-        self.directory = directory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "DarkRoom/\(accountID.uuidString)")
+        self.directory = directory ?? CacheLocation.account(accountID)
         self.diskLimitBytes = diskLimitBytes
         self.maxConcurrent = maxConcurrent
         memory.totalCostLimit = 512 << 20

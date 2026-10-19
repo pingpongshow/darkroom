@@ -1,0 +1,89 @@
+import XCTest
+
+/// Feedback round: Back to grid keeps the place, Edit button and labelled tools, date bar jumps and hover,
+/// Memories under Collections (Folders gone), hiding a person.
+@MainActor
+final class NavigationUITests: XCTestCase {
+    private func cells(_ app: XCUIApplication) -> XCUIElementQuery {
+        app.images.matching(NSPredicate(format: "identifier BEGINSWITH 'asset-'"))
+    }
+    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
+
+    func testBackEditScrubberMemoriesAndPeople() throws {
+        let app = UITestSupport.launch()
+        try UITestSupport.signIn(app)
+        XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 20))
+
+        // Sidebar: Memories is a collection; Folders is gone.
+        XCTAssertTrue(UITestSupport.sidebar(app, "Memories").exists)
+        XCTAssertFalse(any(app, "sidebar-Folders").exists)
+
+        // Open the last photo in the grid, then come back with the Grid button: it is still on screen.
+        let photos = cells(app).matching(NSPredicate(format: "label == 'Photo'")).allElementsBoundByIndex
+        let target = try XCTUnwrap(photos.last)
+        let id = target.identifier
+        target.doubleClick()
+        let back = any(app, "back-to-grid")
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "Back to grid button in the loupe")
+        XCTAssertTrue(any(app, "edit-photo").exists, "Edit button in the loupe")
+        back.click()
+        let returned = app.images[id]
+        XCTAssertTrue(returned.waitForExistence(timeout: 10))
+        XCTAssertTrue(returned.isHittable, "Grid returns to the photo you were on")
+
+        // Edit button opens Develop with labelled tools.
+        returned.click()
+        any(app, "edit-photo").click()
+        XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
+        XCTAssertTrue(any(app, "develop-rotate-left").exists && any(app, "develop-flip").exists)
+        UITestSupport.screenshot("fb-1-develop-tools", in: self)
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey("g", modifierFlags: [])
+
+        // Date bar: hover shows month and year; clicking a month scrolls there.
+        XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 10))
+        let months = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'scrubber-m-'"))
+        let lastMonth = try XCTUnwrap(months.allElementsBoundByIndex.last)
+        lastMonth.hover()
+        XCTAssertTrue(any(app, "scrubber-hover").waitForExistence(timeout: 3), "Hover shows the month and year")
+        UITestSupport.screenshot("fb-2-scrubber-hover", in: self)
+        let firstID = cells(app).firstMatch.identifier
+        lastMonth.click()
+        sleep(1)
+        XCTAssertFalse(app.images[firstID].isHittable, "Clicking an old month scrolls away from the newest photos")
+
+        // Memories view.
+        UITestSupport.go(app, "Memories")
+        XCTAssertTrue(any(app, "memories-view").waitForExistence(timeout: 10))
+
+        // Right-click a Live Photo in the grid ▸ Play Live Photo.
+        UITestSupport.go(app, "Photos")
+        let live = cells(app).matching(NSPredicate(format: "label == 'Live Photo'")).firstMatch
+        if live.waitForExistence(timeout: 10) {
+            live.rightClick()
+            let play = app.menuItems.matching(NSPredicate(format: "title == 'Play Live Photo'")).allElementsBoundByIndex.first { $0.isHittable }
+            try XCTUnwrap(play, "Play Live Photo in the menu").click()
+            XCTAssertTrue(any(app, "video-player").waitForExistence(timeout: 10), "Live Photo plays")
+            app.typeKey(.escape, modifierFlags: [])
+        }
+
+        // People: hover shows a hide button; hide, show hidden, unhide.
+        UITestSupport.go(app, "People")
+        let person = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'person-'")).firstMatch
+        if person.waitForExistence(timeout: 15) {
+            let personID = String(person.identifier.dropFirst("person-".count))
+            person.hover()
+            let hide = any(app, "hide-person-\(personID)")
+            XCTAssertTrue(hide.waitForExistence(timeout: 3), "Hide button on hover")
+            hide.click()
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: any(app, "person-\(personID)"))
+            waitForExpectations(timeout: 10)
+            any(app, "people-show-hidden").click()
+            XCTAssertTrue(any(app, "hide-person-\(personID)").waitForExistence(timeout: 10))
+            any(app, "hide-person-\(personID)").click()   // show again
+            sleep(2)
+            any(app, "people-show-hidden").click()
+            XCTAssertTrue(any(app, "person-\(personID)").waitForExistence(timeout: 10), "Person shown again")
+        }
+    }
+}

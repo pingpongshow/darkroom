@@ -82,14 +82,17 @@ struct PeopleView: View {
     @State private var renaming: PersonResponseDto?
     @State private var newName = ""
     @State private var merging: PersonResponseDto?
+    @State private var hovered: String?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 TextField("Filter people", text: $filter).textFieldStyle(.roundedBorder).frame(width: 220)
                     .accessibilityIdentifier("people-filter")
-                Toggle("Show hidden", isOn: $showHidden).toggleStyle(.checkbox)
+                Toggle("Show hidden people", isOn: $showHidden).toggleStyle(.checkbox)
+                    .accessibilityIdentifier("people-show-hidden")
                 Spacer()
+                Text("Right-click a person to hide, rename or merge").font(.caption).foregroundStyle(Theme.textTertiary)
                 Text("\(visible.count) people").font(.caption).foregroundStyle(Theme.textTertiary)
             }
             .padding(12)
@@ -106,21 +109,30 @@ struct PeopleView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 18)], spacing: 18) {
                     ForEach(visible, id: \.id) { person in
-                        Button { open(person) } label: {
-                            VStack(spacing: 6) {
-                                FaceView(person: person, size: 104)
-                                    .opacity(person.isHidden ? 0.4 : 1)
-                                    .overlay(alignment: .topTrailing) {
-                                        if person.isFavorite == true { Image(systemName: "heart.fill").foregroundStyle(.white).padding(4) }
-                                    }
-                                Text(person.name.isEmpty ? "Add name" : person.name)
-                                    .foregroundStyle(person.name.isEmpty ? Theme.textTertiary : Theme.text)
-                                    .lineLimit(1)
+                        ZStack(alignment: .topLeading) {
+                            Button { open(person) } label: {
+                                VStack(spacing: 6) {
+                                    FaceView(person: person, size: 104)
+                                        .opacity(person.isHidden ? 0.4 : 1)
+                                        .overlay(alignment: .topTrailing) {
+                                            if person.isFavorite == true { Image(systemName: "heart.fill").foregroundStyle(.white).padding(4) }
+                                        }
+                                    Text(person.name.isEmpty ? "Add name" : person.name)
+                                        .foregroundStyle(person.name.isEmpty ? Theme.textTertiary : Theme.text)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("person-\(person.id)")
+                            .contextMenu { menu(person) }
+                            if hovered == person.id || person.isHidden {
+                                HideFaceButton(person: person) { hide(person) }
                             }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("person-\(person.id)")
-                        .contextMenu { menu(person) }
+                        .accessibilityElement(children: .contain)
+                        .onHover { inside in
+                            if inside { hovered = person.id } else if hovered == person.id { hovered = nil }
+                        }
                     }
                 }
                 .padding(18)
@@ -151,6 +163,10 @@ struct PeopleView: View {
             }
     }
 
+    private func hide(_ person: PersonResponseDto) {
+        Task { await model.update(person.id, PersonUpdateDto(isHidden: !person.isHidden), client: library.client) }
+    }
+
     private func remember() {
         for person in model.people { library.personNames[person.id] = person.name }
     }
@@ -165,7 +181,7 @@ struct PeopleView: View {
         Button(person.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
             Task { await model.update(person.id, PersonUpdateDto(isFavorite: !(person.isFavorite ?? false)), client: library.client) }
         }
-        Button(person.isHidden ? "Show" : "Hide") {
+        Button(person.isHidden ? "Show in People" : "Hide from People") {
             Task { await model.update(person.id, PersonUpdateDto(isHidden: !person.isHidden), client: library.client) }
         }
         Divider()
@@ -174,6 +190,24 @@ struct PeopleView: View {
 }
 
 extension PersonResponseDto: @retroactive Identifiable {}
+
+/// Hover button on a face: hide the person (or show them again when hidden people are listed).
+private struct HideFaceButton: View {
+    let person: PersonResponseDto
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: person.isHidden ? "eye" : "eye.slash")
+                .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                .padding(5).background(Circle().fill(.black.opacity(0.6)))
+        }
+        .buttonStyle(.plain)
+        .padding(2)
+        .help(person.isHidden ? "Show this person in People again" : "Hide this person from People (also in Immich)")
+        .accessibilityIdentifier("hide-person-\(person.id)")
+    }
+}
 
 struct RenameSheet: View {
     let title: String

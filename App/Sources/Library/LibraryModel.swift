@@ -4,7 +4,7 @@ import DarkRoomCore
 
 /// Library areas shown in the sidebar.
 enum LibraryDestination: Hashable {
-    case photos, explore, map, people, places, albums, sharing, favorites, recentlyAdded, recentlyEdited
+    case photos, explore, map, people, places, albums, sharing, favorites, recentlyAdded, recentlyEdited, memories
     case archive, locked, trash, tags, folders, duplicates, bursts, largeFiles
     case folder(String)
     case album(String), person(String), tag(String), partner(String)
@@ -23,6 +23,7 @@ enum LibraryDestination: Hashable {
         case .favorites: "Favorites"
         case .recentlyAdded: "Recently Added"
         case .recentlyEdited: "Recently Edited"
+        case .memories: "Memories"
         case .archive: "Archive"
         case .locked: "Locked Folder"
         case .trash: "Trash"
@@ -51,8 +52,9 @@ enum LibraryDestination: Hashable {
         case .albums, .album: "rectangle.stack"
         case .sharing, .partner: "person.2.wave.2"
         case .favorites: "heart"
-        case .recentlyAdded: "clock.arrow.circlepath"
+        case .recentlyAdded: "plus.square.on.square"
         case .recentlyEdited: "slider.horizontal.3"
+        case .memories: "clock.arrow.circlepath"
         case .archive: "archivebox"
         case .locked: "lock"
         case .trash: "trash"
@@ -141,8 +143,13 @@ final class LibraryModel: ObservableObject {
     @Published var showFilmstrip = true
     @Published var showInfoOverlay = false
     @Published var playingLive = false
+    /// Where the loupe is drawn (window coordinates, top-left origin).
+    var loupeFrame: CGRect = .zero
+    var pendingLivePlay: String?
     @AppStorage("gridCellSize", store: .darkRoom) var gridCellSize: Double = 180
     @Published var scrollRequest: String?
+    /// Grid scroll position (per timeline store), restored when coming back from the loupe or Develop.
+    var gridScroll: (store: ObjectIdentifier, y: CGFloat)?
     @Published var statusMessage: String?
     /// Search being edited in the toolbar / filter popover.
     @Published var searchDraft = SearchQuery()
@@ -305,6 +312,7 @@ final class LibraryModel: ObservableObject {
     }
 
     private func destinationChanged() {
+        gridScroll = nil
         selection = []
         focusedAssetID = nil
         mode = .grid

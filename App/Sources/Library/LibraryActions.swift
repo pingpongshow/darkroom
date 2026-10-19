@@ -345,12 +345,30 @@ extension LibraryModel {
         let allFavorite = has && assets.allSatisfy(\.isFavorite)
         let visibility = assets.first?.visibility
         var entries: [MenuEntry] = []
+        if assets.count == 1, let live = assets.first, live.isLivePhoto {
+            entries.append(MenuEntry(title: "Play Live Photo", symbol: "livephoto.play") { [weak self] in
+                guard let self else { return }
+                if self.mode != .loupe || self.focusedAssetID != live.id {
+                    self.pendingLivePlay = live.id
+                    self.open(live.id)
+                } else {
+                    self.playingLive = true
+                }
+            })
+        }
         if includeOpen {
             entries.append(MenuEntry(title: "Open", symbol: "rectangle", key: "e", isEnabled: has) { [weak self] in
                 if let self, let id = ids.first { self.open(id) }
             })
-            entries.append(.separator)
         }
+        if assets.count == 1, let photo = assets.first, !photo.isVideo {
+            entries.append(MenuEntry(title: "Edit Photo", symbol: "slider.horizontal.3", key: "d") { [weak self] in
+                guard let self else { return }
+                self.focusedAssetID = photo.id
+                self.toggleMode(.develop)
+            })
+        }
+        if entries.count > 0 { entries.append(.separator) }
         entries.append(MenuEntry(title: "Flag", symbol: "flag", isEnabled: has, children: [
             MenuEntry(title: "Pick", key: "p") { [weak self] in self?.setFlag(.pick) },
             MenuEntry(title: "Reject", key: "x") { [weak self] in self?.setFlag(.reject) },

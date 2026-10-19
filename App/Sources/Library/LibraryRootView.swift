@@ -37,6 +37,7 @@ struct LibraryShell: View {
     @EnvironmentObject var library: LibraryModel
     @Environment(\.undoManager) private var undoManager
     @State private var keyMonitor: Any?
+    @State private var mouseMonitor: Any?
     @State private var confirmEmptyTrash = false
     @State private var trashCount = 0
 
@@ -138,7 +139,10 @@ struct LibraryShell: View {
                 library.sheet = .tour
             }
         }
-        .onDisappear { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -151,12 +155,8 @@ struct LibraryShell: View {
                     if library.showFilterBar { FilterBar() }
                     if library.destination == .trash { TrashBar(timeline: library.timeline) }
                     if let album = library.currentAlbum { AlbumHeader(album: album) }
-                    if library.destination == .photos { MemoriesStrip() }
                     if case .folder(let path) = library.destination { FolderPathBar(path: path) }
-                    ZStack(alignment: .trailing) {
-                    GridView(timeline: library.timeline)
-                    DateScrubber(timeline: library.timeline).frame(width: 64)
-                }
+                    GridWithScrubber(timeline: library.timeline)
                 .overlay {
                     TimelineStatusOverlay(timeline: library.timeline, destination: library.destination)
                 }
@@ -180,6 +180,7 @@ struct LibraryShell: View {
             case .albums: AlbumsView()
             case .tags: TagsView()
             case .folders: FoldersView()
+            case .memories: MemoriesView()
             case .duplicates: DuplicatesView()
             case .bursts: BurstsView()
             case .sharing: SharingView()
@@ -191,6 +192,16 @@ struct LibraryShell: View {
     // MARK: Lightroom keyboard shortcuts
 
     private func installKeyMonitor() {
+        // Right-click on a Live Photo in the loupe plays it (the context menu still opens).
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
+            if library.mode == .loupe, library.focusedAsset?.isLivePhoto == true,
+               let content = event.window?.contentView {
+                let p = event.locationInWindow
+                let point = CGPoint(x: p.x, y: content.bounds.height - p.y)
+                if library.loupeFrame.contains(point) { library.playingLive = true }
+            }
+            return event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Never steal keys from text fields.
             if let text = event.window?.firstResponder as? NSTextView, text.isEditable,
@@ -333,7 +344,11 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            if library.canGoBack {
+            if library.mode != .grid && library.destination.showsGrid {
+                Button { library.mode = .grid } label: { Label("Grid", systemImage: "chevron.left") }
+                    .help("Back to the grid, where you left it (Esc or G)")
+                    .accessibilityIdentifier("back-to-grid")
+            } else if library.canGoBack {
                 Button { library.goBack() } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.borderless).help("Back (⌘[)").accessibilityIdentifier("back")
             }
@@ -360,6 +375,12 @@ struct TopBar: View {
                 }
                 .pickerStyle(.segmented).frame(width: 130)
                 .accessibilityIdentifier("mode-picker")
+                if library.mode == .loupe || library.mode == .grid {
+                    Button { library.toggleMode(.develop) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+                        .disabled(library.targetIDs.isEmpty && library.focusedAssetID == nil)
+                        .help("Edit the photo: crop, rotate, light, colour and more (D)")
+                        .accessibilityIdentifier("edit-photo")
+                }
                 if library.mode == .grid {
                     Slider(value: $library.gridCellSize, in: 90...480).frame(width: 110).help("Thumbnail size (⌘+ / ⌘−)")
                 }
@@ -400,7 +421,7 @@ struct SidebarView: View {
 
     private let sections: [(String, [LibraryDestination])] = [
         ("Library", [.photos, .explore, .map, .people, .places]),
-        ("Collections", [.albums, .sharing, .favorites, .recentlyAdded, .recentlyEdited, .tags, .folders]),
+        ("Collections", [.albums, .sharing, .favorites, .memories, .recentlyAdded, .recentlyEdited, .tags]),
         ("Manage", [.archive, .locked, .duplicates, .bursts, .largeFiles, .trash]),
     ]
 
@@ -483,34 +504,95 @@ struct SidebarAlbums: View {
     }
 }
 
-/// Year/month jump bar along the right edge of the grid.
+/// The grid with its date bar; the hovered date floats beside the bar, over the grid.
+struct GridWithScrubber: View {
+    @ObservedObject var timeline: TimelineStore
+    @State private var hover: ScrubberHover?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            GridView(timeline: timeline)
+            DateScrubber(timeline: timeline, hover: $hover).frame(width: 58)
+        }
+        .coordinateSpace(name: "grid-area")
+        .overlay(alignment: .topTrailing) {
+            if let hover {
+                Text(hover.text)
+                    .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Capsule().fill(Theme.highlight))
+                    .shadow(radius: 4)
+                    .offset(x: -66, y: max(0, hover.y - 14))
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("scrubber-hover")
+            }
+        }
+    }
+}
+
+struct ScrubberHover: Equatable {
+    var key: String
+    var text: String
+    var y: CGFloat
+}
+
+/// Year/month jump bar beside the grid: click a year or month to jump there; hovering shows the full date.
 struct DateScrubber: View {
     @EnvironmentObject var library: LibraryModel
     @ObservedObject var timeline: TimelineStore
+    @Binding var hover: ScrubberHover?
 
     var body: some View {
         let years = Dictionary(grouping: timeline.sections) { Calendar.utc.component(.year, from: $0.date) }
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 0) {
                 ForEach(years.keys.sorted(by: >), id: \.self) { year in
-                    Button(String(year)) {
-                        if let first = years[year]?.first { library.scrollRequest = first.bucket }
+                    if let first = years[year]?.first {
+                        row(String(year), bucket: first.bucket, tooltip: String(year), isYear: true)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
                     ForEach(years[year] ?? []) { section in
-                        Button(section.date.formatted(.dateTime.month(.abbreviated))) { library.scrollRequest = section.bucket }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.textTertiary)
+                        row(section.date.formatted(.dateTime.month(.abbreviated)), bucket: section.bucket,
+                            tooltip: section.date.formatted(.dateTime.month(.wide).year()), isYear: false)
                     }
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.trailing, 14)
+            .padding(.vertical, 8)
         }
         .frame(maxHeight: .infinity)
+        .background(Theme.panel)
+        .onHover { if !$0 { hover = nil } }
+        .accessibilityIdentifier("date-scrubber")
+    }
+
+    private func row(_ label: String, bucket: String, tooltip: String, isYear: Bool) -> some View {
+        let key = (isYear ? "y-" : "m-") + bucket
+        let isHovered = hover?.key == key
+        return Text(label)
+            .font(.system(size: isYear ? 11 : 10, weight: isYear ? .semibold : .regular))
+            .foregroundStyle(isHovered ? Theme.text : (isYear ? Theme.textSecondary : Theme.textTertiary))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 10).padding(.vertical, isYear ? 4 : 2.5)
+            .background {
+                GeometryReader { geo in
+                    (isHovered ? Theme.highlight.opacity(0.18) : Color.clear)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside {
+                                hover = ScrubberHover(key: key, text: tooltip, y: geo.frame(in: .named("grid-area")).midY)
+                                NSCursor.pointingHand.set()
+                            } else {
+                                if hover?.key == key { hover = nil }
+                                NSCursor.arrow.set()
+                            }
+                        }
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { library.scrollRequest = bucket }
+            .accessibilityElement()
+            .accessibilityLabel(tooltip)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("scrubber-\(key)")
     }
 }
 

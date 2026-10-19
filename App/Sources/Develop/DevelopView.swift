@@ -52,13 +52,34 @@ struct DevelopToolbar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Toggle(isOn: $develop.showBefore) { Image(systemName: "rectangle.lefthalf.inset.filled") }
-                .toggleStyle(.button).help("Before / after (\\)").accessibilityIdentifier("develop-before")
-            Toggle(isOn: $develop.cropping) { Image(systemName: "crop") }
+            Toggle(isOn: $develop.cropping) { Label("Crop", systemImage: "crop") }
                 .toggleStyle(.button).help("Crop & straighten (R)").accessibilityIdentifier("develop-crop")
                 .disabled(!develop.canEdit)
-            Toggle(isOn: $develop.eyedropper) { Image(systemName: "eyedropper") }
+            Button { develop.set { $0.geometry.quarterTurns = ($0.geometry.quarterTurns + 3) % 4 } } label: {
+                Label("Rotate Left", systemImage: "rotate.left")
+            }
+            .help("Rotate 90° left").disabled(!develop.canEdit).accessibilityIdentifier("develop-rotate-left")
+            Button { develop.set { $0.geometry.quarterTurns = ($0.geometry.quarterTurns + 1) % 4 } } label: {
+                Label("Rotate Right", systemImage: "rotate.right")
+            }
+            .help("Rotate 90° right").disabled(!develop.canEdit).accessibilityIdentifier("develop-rotate-right")
+            Button { develop.set { $0.geometry.flipHorizontal.toggle() } } label: {
+                Label("Flip", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+            }
+            .help("Flip horizontally").disabled(!develop.canEdit).accessibilityIdentifier("develop-flip")
+            Divider().frame(height: 18)
+            Toggle(isOn: Binding(get: { develop.tool == .spot }, set: { develop.tool = $0 ? .spot : .none })) {
+                Label("Heal", systemImage: "bandage")
+            }
+            .toggleStyle(.button).help("Remove spots and blemishes (Q)").disabled(!develop.canEdit)
+            Toggle(isOn: Binding(get: { develop.tool == .mask }, set: { develop.tool = $0 ? .mask : .none })) {
+                Label("Masks", systemImage: "circle.dashed.inset.filled")
+            }
+            .toggleStyle(.button).help("Local adjustments: brush, gradients, subject, sky (M)").disabled(!develop.canEdit)
+            Toggle(isOn: $develop.eyedropper) { Label("White Balance", systemImage: "eyedropper") }
                 .toggleStyle(.button).help("White balance selector (W): click something neutral").disabled(!develop.canEdit)
+            Toggle(isOn: $develop.showBefore) { Label("Before", systemImage: "rectangle.lefthalf.inset.filled") }
+                .toggleStyle(.button).help("Before / after (\\)").accessibilityIdentifier("develop-before")
             Divider().frame(height: 18)
             Button { develop.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!develop.canUndo).help("Undo (⌘Z)")
             Button { develop.redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!develop.canRedo).help("Redo (⇧⌘Z)")
@@ -88,6 +109,7 @@ struct DevelopToolbar: View {
                 .disabled(develop.isSaving)
                 .accessibilityIdentifier("develop-done")
         }
+        .labelStyle(DevelopToolLabelStyle())
         .controlSize(.small)
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Theme.panel)
@@ -379,5 +401,15 @@ struct CropGrid: Shape {
             p.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * f)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * f))
         }
         return p
+    }
+}
+
+/// Develop toolbar buttons: icon and title, collapsing to icons only in narrow windows.
+struct DevelopToolLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) { configuration.icon; configuration.title }
+            configuration.icon
+        }
     }
 }

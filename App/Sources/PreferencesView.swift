@@ -3,7 +3,6 @@ import DarkRoomCore
 
 struct PreferencesView: View {
     @EnvironmentObject var state: AppState
-    @AppStorage("showMemories", store: .darkRoom) private var showMemories = true
     @AppStorage("slideshowSeconds", store: .darkRoom) private var slideshowSeconds = 4.0
     @AppStorage("slideshowKenBurns", store: .darkRoom) private var kenBurns = true
     @AppStorage("writeMetadataToFiles", store: .darkRoom) private var writeToFiles = true
@@ -17,7 +16,6 @@ struct PreferencesView: View {
                     ForEach(AppearanceSetting.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Toggle("Show memories above Photos", isOn: $showMemories)
                 Toggle("Show tips", isOn: $showTips)
                 Toggle("Auto advance after rating or flagging", isOn: $autoAdvance)
                 Section("Metadata") {

@@ -38,6 +38,9 @@ struct GridView: NSViewRepresentable {
         scroll.backgroundColor = NSColor(Theme.gridBackground)
         scroll.automaticallyAdjustsContentInsets = false
         context.coordinator.scrollView = scroll
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.scrolled(_:)),
+                                               name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         return scroll
     }
 
@@ -101,9 +104,41 @@ struct GridView: NSViewRepresentable {
                 if sizeChanged { layout.invalidateLayout() }
             }
             let selected = library.selection
+            if storeChanged { restoring = true }   // don't record the reload's own scroll as the saved position
             collection?.reloadData()
-            if storeChanged { collection?.scroll(.zero) }
+            if storeChanged { restoreScroll(store: store) }
             syncSelection(selected, force: true)
+        }
+
+        /// Back from the loupe / Develop: the same scroll position, moved only if the photo you were on is off-screen.
+        private func restoreScroll(store: ObjectIdentifier) {
+            guard let collection else { restoring = false; return }
+            guard let saved = library.gridScroll, saved.store == store else {
+                collection.scroll(.zero); restoring = false; scrolled(nil); return
+            }
+            collection.layoutSubtreeIfNeeded()
+            collection.scroll(NSPoint(x: 0, y: saved.y))
+            if let id = library.focusedAssetID, let path = indexPath(of: id),
+               let frame = collection.layoutAttributesForItem(at: path)?.frame,
+               !collection.visibleRect.contains(frame) {
+                collection.scrollToItems(at: [path], scrollPosition: .centeredVertically)
+            }
+            restoring = false
+            scrolled(nil)
+        }
+
+        private var restoring = false
+
+        @objc func scrolled(_ note: Notification?) {
+            guard !restoring, let store, let clip = scrollView?.contentView else { return }
+            library.gridScroll = (store, clip.bounds.origin.y)
+        }
+
+        func indexPath(of id: String) -> IndexPath? {
+            for (s, section) in sections.enumerated() {
+                if let i = section.assets?.firstIndex(where: { $0.id == id }) { return IndexPath(item: i, section: s) }
+            }
+            return nil
         }
 
         func syncSelection(_ ids: Set<String>, force: Bool = false) {
@@ -122,10 +157,18 @@ struct GridView: NSViewRepresentable {
         func scroll(toSection bucket: String) {
             guard let index = sections.firstIndex(where: { $0.bucket == bucket }), let collection else { return }
             Task { await library.timeline.loadSection(bucket) }
-            if let attributes = collection.layoutAttributesForSupplementaryElement(ofKind: NSCollectionView.elementKindSectionHeader,
-                                                                                   at: IndexPath(item: 0, section: index)) {
-                collection.scroll(NSPoint(x: 0, y: attributes.frame.minY))
+            collection.layoutSubtreeIfNeeded()
+            // Pinned headers report their pinned position, so place the month's first row just below its header.
+            let headerHeight = (collection.collectionViewLayout as? NSCollectionViewFlowLayout)?.headerReferenceSize.height ?? 34
+            let y: CGFloat?
+            if collection.numberOfItems(inSection: index) > 0,
+               let item = collection.layoutAttributesForItem(at: IndexPath(item: 0, section: index)) {
+                y = item.frame.minY - headerHeight - 4
+            } else {
+                y = collection.layoutAttributesForSupplementaryElement(ofKind: NSCollectionView.elementKindSectionHeader,
+                                                                       at: IndexPath(item: 0, section: index))?.frame.minY
             }
+            if let y { collection.scroll(NSPoint(x: 0, y: max(0, y))) }
         }
 
         func asset(at path: IndexPath) -> TimelineAsset? {

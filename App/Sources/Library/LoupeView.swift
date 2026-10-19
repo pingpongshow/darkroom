@@ -42,6 +42,8 @@ struct LoupeView: View {
                 }
                 if let loadError { Text(loadError).foregroundStyle(Theme.danger).padding().background(.black.opacity(0.6)) }
             }
+            .background { GeometryReader { geo in Color.clear.preference(key: LoupeFrameKey.self, value: geo.frame(in: .global)) } }
+            .onPreferenceChange(LoupeFrameKey.self) { library.loupeFrame = $0 }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("loupe")
             if let asset = library.focusedAsset, asset.stackID != nil { StackStrip(asset: asset) }
@@ -66,7 +68,9 @@ struct LoupeView: View {
     }
 
     private func loadPreview() async {
-        library.playingLive = false
+        // "Play Live Photo" from the grid opens the loupe and asks to play once it shows this photo.
+        library.playingLive = library.pendingLivePlay != nil && library.pendingLivePlay == library.focusedAssetID
+        library.pendingLivePlay = nil
         loadError = nil
         guard let asset = library.focusedAsset, asset.isImage else { image = nil; return }
         let key = ImagePipeline.Key(assetID: asset.id, size: .thumbnail, cacheKey: asset.cacheKey)
@@ -347,4 +351,10 @@ struct PresetBar: View {
             .accessibilityIdentifier("preset-bar")
         }
     }
+}
+
+/// The loupe's frame in window coordinates (top-left origin), so a right-click on it can play a Live Photo.
+struct LoupeFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
