@@ -50,7 +50,9 @@ struct LibraryShell: View {
                 }
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if library.showActivity, let album = library.currentAlbum {
+                if library.mode == .develop {
+                    EmptyView()
+                } else if library.showActivity, let album = library.currentAlbum {
                     Divider().overlay(Theme.separator)
                     ActivityPanel(album: album).frame(width: 280)
                 } else if library.showRightPanel && library.destination.showsGrid {
@@ -113,6 +115,8 @@ struct LibraryShell: View {
                     TimelineStatusOverlay(timeline: library.timeline, destination: library.destination)
                 }
                 }
+            case .develop:
+                DevelopView(develop: library.develop)
             default:
                 LoupeView()
                     .contextMenu { MenuEntriesView(entries: library.assetMenu(includeOpen: false)) }
@@ -149,6 +153,7 @@ struct LibraryShell: View {
         state.noteActivity()
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if library.mode == .develop, handleDevelop(event, mods: mods, key: key) { return true }
         if mods.contains(.command), event.keyCode == 36 { library.startSlideshow(); return true } // ⌘↩
         if mods.contains(.command) {
             switch key {
@@ -185,11 +190,46 @@ struct LibraryShell: View {
         switch key {
         case "g": library.mode = .grid; return true
         case "e": library.toggleMode(.loupe); return true
+        case "d": library.toggleMode(.develop); return true
         case "i": library.showInfoOverlay.toggle(); return true
         case "f": NSApp.keyWindow?.toggleFullScreen(nil); return true
         case " " where library.mode == .loupe:
             guard library.focusedAsset?.isLivePhoto == true else { return false }
             library.playingLive.toggle(); return true
+        default: return false
+        }
+    }
+
+    /// Lightroom Develop shortcuts.
+    private func handleDevelop(_ event: NSEvent, mods: NSEvent.ModifierFlags, key: String) -> Bool {
+        let develop = library.develop
+        if mods == .command {
+            switch key {
+            case "z": develop.undo(); return true
+            case "u": develop.autoTone(); return true
+            default: return false
+            }
+        }
+        if mods == [.command, .shift] {
+            switch key {
+            case "z": develop.redo(); return true
+            case "u": develop.autoWhiteBalance(); return true
+            case "c": develop.copySettings(); return true
+            case "v": develop.pasteSettings(); return true
+            default: return false
+            }
+        }
+        guard mods.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
+        if event.keyCode == 53 { // Esc
+            if develop.cropping { develop.cropping = false } else if develop.eyedropper { develop.eyedropper = false } else { library.mode = .loupe }
+            return true
+        }
+        switch key {
+        case "r": develop.cropping.toggle(); return true
+        case "w": develop.eyedropper.toggle(); return true
+        case "v": develop.set { $0.monochrome.toggle() }; return true
+        case "\\": develop.showBefore.toggle(); return true
+        case "d": return true
         default: return false
         }
     }
@@ -234,12 +274,14 @@ struct TopBar: View {
             Spacer()
             SearchField()
             if library.destination.showsGrid {
-                Picker("", selection: Binding(get: { library.mode == .grid ? ViewMode.grid : .loupe },
+                Picker("", selection: Binding(get: { library.mode == .develop ? ViewMode.develop : (library.mode == .grid ? .grid : .loupe) },
                                               set: { library.mode == $0 ? () : library.toggleMode($0) })) {
                     Image(systemName: "square.grid.3x3").tag(ViewMode.grid).help("Grid (G)")
                     Image(systemName: "rectangle").tag(ViewMode.loupe).help("Loupe (E)")
+                    Image(systemName: "slider.horizontal.3").tag(ViewMode.develop).help("Develop (D)")
                 }
-                .pickerStyle(.segmented).frame(width: 90)
+                .pickerStyle(.segmented).frame(width: 130)
+                .accessibilityIdentifier("mode-picker")
                 if library.mode == .grid {
                     Slider(value: $library.gridCellSize, in: 90...480).frame(width: 110).help("Thumbnail size (⌘+ / ⌘−)")
                 }

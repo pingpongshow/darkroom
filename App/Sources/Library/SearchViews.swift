@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ImmichAPI
 import DarkRoomCore
 
@@ -14,7 +15,11 @@ struct SearchField: View {
             TextField(placeholder, text: $library.searchDraft.text)
                 .textFieldStyle(.plain)
                 .focused($focused)
-                .onSubmit { library.search(library.searchDraft) }
+                .onSubmit {
+                    library.search(library.searchDraft)
+                    // Hand the keyboard back to the grid so G / E / D and the arrows work again.
+                    DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
+                }
                 .accessibilityIdentifier("search-field")
             if !library.searchDraft.isEmpty {
                 Button { library.search(SearchQuery()) } label: { Image(systemName: "xmark.circle.fill") }

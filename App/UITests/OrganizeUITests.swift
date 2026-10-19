@@ -35,6 +35,9 @@ final class OrganizeUITests: XCTestCase {
         XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 20))
         waitForCount(app, 23, "Seeded library")
 
+        go(app, "Trash")
+        sleep(2)
+        let trashBefore = max(0, count(app))
         go(app, "Favorites")
         sleep(1)
         let favorites = count(app)
@@ -71,7 +74,7 @@ final class OrganizeUITests: XCTestCase {
         status(app, contains: "Move to Trash")
         waitForCount(app, 22, "Trashed item leaves the timeline")
         go(app, "Trash")
-        waitForCount(app, 1, "Item is in the trash")
+        waitForCount(app, trashBefore + 1, "Item is in the trash")
         XCTAssertTrue(app.buttons["empty-trash"].exists)
         UITestSupport.screenshot("m3-2-trash", in: self)
         app.typeKey("z", modifierFlags: .command)

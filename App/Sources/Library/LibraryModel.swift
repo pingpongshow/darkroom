@@ -114,7 +114,20 @@ final class LibraryModel: ObservableObject {
         didSet { destinationChanged() }
     }
     @Published var timeline: TimelineStore
-    @Published var mode: ViewMode = .grid
+    @Published var mode: ViewMode = .grid {
+        didSet {
+            // Leaving Develop saves the edit to Immich.
+            if oldValue == .develop, mode != .develop, let develop = developModel { Task { await develop.save() } }
+        }
+    }
+    /// The Develop module's state (created on first use).
+    var develop: DevelopModel {
+        if let developModel { return developModel }
+        let model = DevelopModel(library: self)
+        developModel = model
+        return model
+    }
+    private var developModel: DevelopModel?
     @Published var selection: Set<String> = []
     @Published var focusedAssetID: String?
     @Published var showLeftPanel = true
@@ -332,7 +345,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func toggleMode(_ target: ViewMode) {
-        if target == .loupe, focusedAssetID == nil {
+        if target == .loupe || target == .develop, focusedAssetID == nil {
             focusedAssetID = selection.first ?? orderedAssets.first?.id
         }
         mode = (mode == target && target != .grid) ? .grid : target
