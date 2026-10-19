@@ -7,6 +7,8 @@ enum LibraryDestination: Hashable {
     case photos, explore, map, people, places, albums, sharing, favorites, recentlyAdded, recentlyEdited
     case archive, locked, trash, tags, folders, duplicates
     case album(String), person(String), tag(String), partner(String)
+    case search(SearchQuery)
+    case mapSelection(MapSelection)
 
     var title: String {
         switch self {
@@ -30,6 +32,8 @@ enum LibraryDestination: Hashable {
         case .person: "Person"
         case .tag: "Tag"
         case .partner: "Partner"
+        case .search: "Search"
+        case .mapSelection(let selection): selection.title
         }
     }
 
@@ -52,6 +56,16 @@ enum LibraryDestination: Hashable {
         case .folders: "folder"
         case .duplicates: "square.on.square"
         case .person: "person.crop.circle"
+        case .search: "magnifyingglass"
+        case .mapSelection: "map"
+        }
+    }
+
+    /// Whether the destination shows a photo grid (timeline or a fixed result set).
+    var showsGrid: Bool {
+        switch self {
+        case .search, .mapSelection: true
+        default: timelineQuery != nil
         }
     }
 
@@ -71,6 +85,12 @@ enum LibraryDestination: Hashable {
     }
 }
 
+/// Photos picked on the map (a cluster or the visible area).
+struct MapSelection: Hashable {
+    var title: String
+    var assetIDs: [String]
+}
+
 /// Grid (G) / loupe (E) / compare (C) / survey (N) / develop (D), as in Lightroom.
 enum ViewMode: String {
     case grid, loupe, develop, compare, survey
@@ -81,7 +101,10 @@ enum ViewMode: String {
 final class LibraryModel: ObservableObject {
     let session: UserSession
     let pipeline: ImagePipeline
-    @Published var destination: LibraryDestination = .photos { didSet { destinationChanged() } }
+    @Published var destination: LibraryDestination = .photos {
+        willSet { if !navigatingBack, newValue != destination { history.append(destination) } }
+        didSet { destinationChanged() }
+    }
     @Published var timeline: TimelineStore
     @Published var mode: ViewMode = .grid
     @Published var selection: Set<String> = []
@@ -91,9 +114,18 @@ final class LibraryModel: ObservableObject {
     @Published var showFilmstrip = true
     @Published var showInfoOverlay = false
     @Published var playingLive = false
-    @AppStorage("gridCellSize") var gridCellSize: Double = 180
+    @AppStorage("gridCellSize", store: .darkRoom) var gridCellSize: Double = 180
     @Published var scrollRequest: String?
     @Published var statusMessage: String?
+    /// Search being edited in the toolbar / filter popover.
+    @Published var searchDraft = SearchQuery()
+    /// Names for person destinations (filled by People / Explore).
+    @Published var personNames: [String: String] = [:]
+    /// Navigation history for Back (⌘[).
+    private var history: [LibraryDestination] = []
+    private var navigatingBack = false
+    /// Every geotagged timeline asset, loaded on first use of the map.
+    private var mapStore: TimelineStore?
 
     private var socket: ImmichSocket?
     private var socketTask: Task<Void, Never>?
@@ -118,12 +150,66 @@ final class LibraryModel: ObservableObject {
         socketTask?.cancel()
     }
 
+    var title: String {
+        switch destination {
+        case .person(let id): personNames[id].flatMap { $0.isEmpty ? nil : $0 } ?? "Unnamed person"
+        case .search(let query): query.summary
+        default: destination.title
+        }
+    }
+
+    var canGoBack: Bool { !history.isEmpty }
+
+    func goBack() {
+        guard let previous = history.popLast() else { return }
+        navigatingBack = true
+        destination = previous
+        navigatingBack = false
+    }
+
+    func search(_ query: SearchQuery) {
+        searchDraft = query
+        destination = query.isEmpty ? .photos : .search(query)
+    }
+
+    /// All geotagged photos (loads every month once; later calls reuse it).
+    func geotaggedAssets() async -> [TimelineAsset] {
+        let store: TimelineStore
+        if let mapStore { store = mapStore } else {
+            var query = TimelineQuery.photos
+            query.withCoordinates = true
+            store = TimelineStore(client: client, query: query)
+            mapStore = store
+            await store.reload()
+        }
+        await store.loadAll()
+        return store.loadedAssets.filter { $0.latitude != nil && $0.longitude != nil }
+    }
+
+    private func makeStore(for destination: LibraryDestination) -> TimelineStore? {
+        switch destination {
+        case .search(let query):
+            let client = self.client
+            return TimelineStore(client: client, groupByMonth: !query.usesSmartSearch, flatTitle: "Best matches") {
+                try await SearchService.assets(query, client: client)
+            }
+        case .mapSelection(let selection):
+            let ids = Set(selection.assetIDs)
+            return TimelineStore(client: client) { [weak self] in
+                guard let self else { return [] }
+                return await self.geotaggedAssets().filter { ids.contains($0.id) }
+            }
+        default:
+            return destination.timelineQuery.map { TimelineStore(client: client, query: $0) }
+        }
+    }
+
     private func destinationChanged() {
         selection = []
         focusedAssetID = nil
         mode = .grid
-        guard let query = destination.timelineQuery else { return }
-        let store = TimelineStore(client: client, query: query)
+        if case .search(let query) = destination { searchDraft = query } else { searchDraft = SearchQuery() }
+        guard let store = makeStore(for: destination) else { return }
         timeline = store
         Task {
             await store.reload()
@@ -134,6 +220,7 @@ final class LibraryModel: ObservableObject {
     /// Loads the remaining months a few at a time so the filmstrip, stepping and select-all cover
     /// the whole timeline (the grid still loads visible months first).
     private func loadRemainingInBackground(_ store: TimelineStore) {
+        guard !store.isStatic else { return }
         Task { [weak self] in
             for section in store.sections where !section.isLoaded {
                 guard let self, self.timeline === store, !Task.isCancelled else { return }
@@ -202,7 +289,7 @@ final class LibraryModel: ObservableObject {
     private func handle(_ event: ImmichEvent) async {
         switch event {
         case .uploadSuccess, .assetRestore, .stackUpdate:
-            await timeline.reload()
+            if !timeline.isStatic { await timeline.reload() }
         case .assetUpdate(let id), .assetEditReady(let id):
             await timeline.refresh(assetIDs: [id])
         case .assetTrash(let ids):

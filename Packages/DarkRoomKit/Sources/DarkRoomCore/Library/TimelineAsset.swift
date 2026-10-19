@@ -102,3 +102,21 @@ public enum ImmichDate {
         lock.withLock { fractional.string(from: date) }
     }
 }
+
+public extension TimelineAsset {
+    /// Builds a grid record from a full asset response (search results, explore, map).
+    init(_ dto: AssetResponseDto) {
+        let w = Double(dto.width ?? dto.exifInfo?.exifImageWidth ?? 1)
+        let h = Double(dto.height ?? dto.exifInfo?.exifImageHeight ?? 1)
+        let created = ImmichDate.parse(dto.fileCreatedAt) ?? .distantPast
+        let local = ImmichDate.parse(dto.localDateTime) ?? created
+        self.init(id: dto.id, isImage: dto.type != .video, ratio: h > 0 ? max(w / h, 0.05) : 1,
+                  thumbhash: dto.thumbhash, fileCreatedAt: created,
+                  localOffsetHours: (local.timeIntervalSince(created) / 3600).rounded(),
+                  isFavorite: dto.isFavorite, isTrashed: dto.isTrashed, livePhotoVideoID: dto.livePhotoVideoId,
+                  duration: dto.duration.map { Double($0) / 1000 }, ownerID: dto.ownerId, visibility: dto.visibility,
+                  projectionType: dto.exifInfo?.projectionType, stackID: dto.stack?.id,
+                  stackCount: dto.stack?.assetCount, city: dto.exifInfo?.city, country: dto.exifInfo?.country,
+                  latitude: dto.exifInfo?.latitude, longitude: dto.exifInfo?.longitude)
+    }
+}

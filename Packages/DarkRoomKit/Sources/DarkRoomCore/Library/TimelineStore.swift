@@ -45,9 +45,11 @@ public struct TimelineSection: Identifiable, Hashable, Sendable {
     public var date: Date
     public var assets: [TimelineAsset]?
     public var isLoaded: Bool { assets != nil }
+    /// Overrides the month title (e.g. "Best matches" for relevance-ordered search results).
+    public var customTitle: String?
 
     public var title: String {
-        date.formatted(.dateTime.month(.wide).year())
+        customTitle ?? date.formatted(.dateTime.month(.wide).year())
     }
 }
 
@@ -62,10 +64,49 @@ public final class TimelineStore: ObservableObject {
     /// Bumped whenever asset contents change (for views that cache layouts).
     @Published public private(set) var revision = 0
     private var inFlight: [String: Task<Void, Never>] = [:]
+    /// For result sets that aren't Immich timelines (search, map selections): returns every asset.
+    private let provider: (@Sendable () async throws -> [TimelineAsset])?
+    private var groupByMonth = true
+    private var flatTitle = ""
 
     public init(client: ImmichClient, query: TimelineQuery) {
         self.client = client
         self.query = query
+        self.provider = nil
+    }
+
+    /// A store showing a fixed result set, grouped into months by local capture date.
+    /// With `groupByMonth: false` the results stay in the provider's order (relevance) in one section.
+    public init(client: ImmichClient, groupByMonth: Bool = true, flatTitle: String = "Results",
+                provider: @escaping @Sendable () async throws -> [TimelineAsset]) {
+        self.client = client
+        self.query = TimelineQuery()
+        self.provider = provider
+        self.groupByMonth = groupByMonth
+        self.flatTitle = flatTitle
+    }
+
+    public var isStatic: Bool { provider != nil }
+
+    /// Groups a flat, already ordered asset list into month sections.
+    public static func monthSections(_ assets: [TimelineAsset]) -> [TimelineSection] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        var sections: [TimelineSection] = []
+        for asset in assets {
+            let parts = calendar.dateComponents([.year, .month], from: asset.localDate)
+            let bucket = String(format: "%04d-%02d-01", parts.year ?? 1970, parts.month ?? 1)
+            if sections.last?.bucket == bucket {
+                sections[sections.count - 1].assets!.append(asset)
+                sections[sections.count - 1].count += 1
+            } else if let index = sections.firstIndex(where: { $0.bucket == bucket }) {
+                sections[index].assets!.append(asset)
+                sections[index].count += 1
+            } else {
+                sections.append(TimelineSection(bucket: bucket, count: 1, date: bucketDate(bucket), assets: [asset]))
+            }
+        }
+        return sections
     }
 
     public var totalCount: Int { sections.reduce(0) { $0 + $1.count } }
@@ -74,6 +115,23 @@ public final class TimelineStore: ObservableObject {
     public func reload() async {
         isLoading = true
         defer { isLoading = false }
+        if let provider {
+            do {
+                let assets = try await provider()
+                if groupByMonth {
+                    sections = Self.monthSections(assets)
+                } else {
+                    sections = assets.isEmpty ? [] : [TimelineSection(bucket: "results", count: assets.count, date: .distantPast,
+                                                                      assets: assets, customTitle: flatTitle)]
+                }
+                error = nil
+                revision += 1
+            } catch is CancellationError {
+            } catch {
+                self.error = error.localizedDescription
+            }
+            return
+        }
         do {
             let buckets = try await client.getTimeBuckets(
                 albumId: query.albumID, isFavorite: query.isFavorite, isTrashed: query.isTrashed,
@@ -105,6 +163,7 @@ public final class TimelineStore: ObservableObject {
 
     /// Ensures a month's assets are loaded (deduplicates concurrent requests).
     public func loadSection(_ bucket: String) async {
+        guard provider == nil else { return }
         if let index = sections.firstIndex(where: { $0.bucket == bucket }), sections[index].isLoaded { return }
         if let task = inFlight[bucket] { await task.value; return }
         let task = Task { [weak self] in

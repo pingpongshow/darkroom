@@ -81,6 +81,18 @@ public actor ImagePipeline {
         return data
     }
 
+    /// A person's face thumbnail (memory-cached; `version` is the person's updatedAt so changes refetch).
+    public func faceImage(personID: String, version: String?, maxPixel: Int = 256) async throws -> CGImage {
+        let memKey = "face-\(personID)-\(version ?? "")-\(maxPixel)" as NSString
+        if let cached = memory.object(forKey: memKey) { return cached.image }
+        await acquire()
+        defer { release() }
+        let data = try await client.personThumbnail(personID: personID)
+        guard let image = Self.decode(data, maxPixel: maxPixel) else { throw ImmichError.decoding("Unreadable face", path: personID) }
+        memory.setObject(CGImageBox(image), forKey: memKey, cost: image.bytesPerRow * image.height)
+        return image
+    }
+
     /// Starts loading renditions ahead of display (e.g. next screenful, adjacent photos).
     public func prefetch(_ keys: [Key]) {
         for key in keys where inFlight[key] == nil {

@@ -45,6 +45,8 @@ def type_name(ref):
 
 def enum_case(value):
     v = re.sub(r"[^A-Za-z0-9]+", " ", str(value)).strip().split(" ")
+    # ALL_CAPS words become camelCase ("LIVE_PHOTO" -> livePhoto).
+    v = [p.lower() if p.isupper() else p for p in v]
     name = (v[0][:1].lower() + v[0][1:]) + "".join(p[:1].upper() + p[1:] for p in v[1:]) if v and v[0] else "empty"
     if name[0].isdigit():
         name = "_" + name

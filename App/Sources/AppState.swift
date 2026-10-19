@@ -30,11 +30,11 @@ final class AppState: ObservableObject {
 
     @Published var phase: Phase = .picker
     @Published private(set) var session: UserSession?
-    @AppStorage("appearance") var appearance: AppearanceSetting = .dark {
+    @AppStorage("appearance", store: .darkRoom) var appearance: AppearanceSetting = .dark {
         didSet { applyAppearance() }
     }
-    @AppStorage("autoLockMinutes") var autoLockMinutes: Int = 15
-    @AppStorage("lockOnSleep") var lockOnSleep: Bool = true
+    @AppStorage("autoLockMinutes", store: .darkRoom) var autoLockMinutes: Int = 15
+    @AppStorage("lockOnSleep", store: .darkRoom) var lockOnSleep: Bool = true
 
     let accounts: AccountManager
     private var observers: [NSObjectProtocol] = []

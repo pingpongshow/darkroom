@@ -47,7 +47,7 @@ struct LibraryShell: View {
                 }
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if library.showRightPanel {
+                if library.showRightPanel && library.destination.showsGrid {
                     Divider().overlay(Theme.separator)
                     InfoPanel().frame(width: 280)
                 }
@@ -64,7 +64,7 @@ struct LibraryShell: View {
     }
 
     @ViewBuilder private var content: some View {
-        if library.destination.timelineQuery != nil {
+        if library.destination.showsGrid {
             switch library.mode {
             case .grid:
                 ZStack(alignment: .trailing) {
@@ -72,15 +72,19 @@ struct LibraryShell: View {
                     DateScrubber(timeline: library.timeline).frame(width: 64)
                 }
                 .overlay {
-                    if library.timeline.sections.isEmpty && !library.timeline.isLoading {
-                        EmptyStateView(destination: library.destination, error: library.timeline.error)
-                    }
+                    TimelineStatusOverlay(timeline: library.timeline, destination: library.destination)
                 }
             default:
                 LoupeView()
             }
         } else {
-            ComingSoonView(destination: library.destination)
+            switch library.destination {
+            case .explore: ExploreView()
+            case .people: PeopleView()
+            case .places: PlacesView()
+            case .map: LibraryMapView()
+            default: ComingSoonView(destination: library.destination)
+            }
         }
     }
 
@@ -101,6 +105,8 @@ struct LibraryShell: View {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if mods.contains(.command) {
             switch key {
+            case "f": NotificationCenter.default.post(name: .focusSearch, object: nil); return true
+            case "[": library.goBack(); return true
             case "=", "+": zoom(1.25); return true
             case "-": zoom(0.8); return true
             default: return false
@@ -161,14 +167,20 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(library.destination.title).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.text)
+            if library.canGoBack {
+                Button { library.goBack() } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.borderless).help("Back (⌘[)").accessibilityIdentifier("back")
+            }
+            Text(library.title).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.text)
+                .lineLimit(1)
                 .accessibilityIdentifier("destination-title")
-            if library.destination.timelineQuery != nil {
+            if library.destination.showsGrid {
                 Text("\(timeline.totalCount) items").font(.caption).foregroundStyle(Theme.textTertiary)
                     .accessibilityIdentifier("item-count")
             }
             Spacer()
-            if library.destination.timelineQuery != nil {
+            SearchField()
+            if library.destination.showsGrid {
                 Picker("", selection: Binding(get: { library.mode == .grid ? ViewMode.grid : .loupe },
                                               set: { library.mode == $0 ? () : library.toggleMode($0) })) {
                     Image(systemName: "square.grid.3x3").tag(ViewMode.grid).help("Grid (G)")
@@ -283,13 +295,35 @@ extension Calendar {
     }()
 }
 
+/// Loading spinner / empty message over the grid.
+struct TimelineStatusOverlay: View {
+    @ObservedObject var timeline: TimelineStore
+    let destination: LibraryDestination
+
+    var body: some View {
+        if timeline.sections.isEmpty {
+            if timeline.isLoading {
+                ProgressView().controlSize(.large).accessibilityIdentifier("grid-loading")
+            } else {
+                EmptyStateView(destination: destination, error: timeline.error)
+            }
+        }
+    }
+}
+
 struct EmptyStateView: View {
     let destination: LibraryDestination
     let error: String?
+
+    private var emptyText: String {
+        if case .search = destination { return "No matching photos" }
+        return "Nothing here yet"
+    }
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: destination.symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Theme.textTertiary)
-            Text(error ?? "Nothing here yet").foregroundStyle(error == nil ? Theme.textSecondary : Theme.danger)
+            Text(error ?? emptyText).foregroundStyle(error == nil ? Theme.textSecondary : Theme.danger)
+                .accessibilityIdentifier("empty-state")
         }
     }
 }

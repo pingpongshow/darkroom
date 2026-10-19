@@ -42,7 +42,8 @@ struct GridView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.library = library
-        coordinator.apply(sections: timeline.sections, revision: timeline.revision, cellSize: library.gridCellSize)
+        coordinator.apply(store: ObjectIdentifier(timeline), sections: timeline.sections, revision: timeline.revision,
+                          cellSize: library.gridCellSize)
         coordinator.syncSelection(library.selection)
         if let target = library.scrollRequest {
             coordinator.scroll(toSection: target)
@@ -57,6 +58,7 @@ struct GridView: NSViewRepresentable {
         weak var scrollView: NSScrollView?
         private var sections: [TimelineSection] = []
         private var revision = -1
+        private var store: ObjectIdentifier?
         private var cellSize: Double = 0
         private var updatingSelection = false
 
@@ -74,8 +76,11 @@ struct GridView: NSViewRepresentable {
             }
         }
 
-        func apply(sections: [TimelineSection], revision: Int, cellSize: Double) {
-            guard revision != self.revision || cellSize != self.cellSize || sections.count != self.sections.count else { return }
+        func apply(store: ObjectIdentifier, sections: [TimelineSection], revision: Int, cellSize: Double) {
+            guard store != self.store || revision != self.revision || cellSize != self.cellSize
+                    || sections.count != self.sections.count else { return }
+            let storeChanged = store != self.store
+            self.store = store
             let sizeChanged = cellSize != self.cellSize
             self.sections = sections
             self.revision = revision
@@ -86,6 +91,7 @@ struct GridView: NSViewRepresentable {
             }
             let selected = library.selection
             collection?.reloadData()
+            if storeChanged { collection?.scroll(.zero) }
             syncSelection(selected, force: true)
         }
 

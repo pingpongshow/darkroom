@@ -62,3 +62,15 @@ extension View {
         font(.system(size: 11, weight: .semibold)).textCase(.uppercase).tracking(0.6).foregroundStyle(Theme.textSecondary)
     }
 }
+
+extension UserDefaults {
+    /// App preferences. UI tests (DARKROOM_DATA_DIR set) get a fresh, separate suite so they never
+    /// read or change the user's real settings.
+    nonisolated(unsafe) static let darkRoom: UserDefaults = {
+        guard ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] != nil else { return .standard }
+        let suite = "com.pingpongshow.darkroom.uitests"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }()
+}

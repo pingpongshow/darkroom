@@ -1795,11 +1795,11 @@ public struct AssetTypeEnum: RawRepresentable, Codable, Hashable, Sendable, Cust
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public var description: String { rawValue }
-    public static let iMAGE = AssetTypeEnum(rawValue: "IMAGE")
-    public static let vIDEO = AssetTypeEnum(rawValue: "VIDEO")
-    public static let aUDIO = AssetTypeEnum(rawValue: "AUDIO")
-    public static let oTHER = AssetTypeEnum(rawValue: "OTHER")
-    public static let allKnown: [AssetTypeEnum] = [.iMAGE, .vIDEO, .aUDIO, .oTHER]
+    public static let image = AssetTypeEnum(rawValue: "IMAGE")
+    public static let video = AssetTypeEnum(rawValue: "VIDEO")
+    public static let audio = AssetTypeEnum(rawValue: "AUDIO")
+    public static let other = AssetTypeEnum(rawValue: "OTHER")
+    public static let allKnown: [AssetTypeEnum] = [.image, .video, .audio, .other]
     public init(from decoder: Decoder) throws { rawValue = try decoder.singleValueContainer().decode(String.self) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
@@ -5574,9 +5574,9 @@ public struct SharedLinkType: RawRepresentable, Codable, Hashable, Sendable, Cus
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public var description: String { rawValue }
-    public static let aLBUM = SharedLinkType(rawValue: "ALBUM")
-    public static let iNDIVIDUAL = SharedLinkType(rawValue: "INDIVIDUAL")
-    public static let allKnown: [SharedLinkType] = [.aLBUM, .iNDIVIDUAL]
+    public static let album = SharedLinkType(rawValue: "ALBUM")
+    public static let individual = SharedLinkType(rawValue: "INDIVIDUAL")
+    public static let allKnown: [SharedLinkType] = [.album, .individual]
     public init(from decoder: Decoder) throws { rawValue = try decoder.singleValueContainer().decode(String.self) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
