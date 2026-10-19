@@ -297,48 +297,6 @@ struct TagsView: View {
     }
 }
 
-// MARK: Folders
-
-struct FoldersView: View {
-    @EnvironmentObject var library: LibraryModel
-    @State private var tree: [LibraryUtilities.Folder] = []
-    @State private var loaded = false
-
-    var body: some View {
-        List {
-            if loaded && tree.isEmpty { Text("No folders").foregroundStyle(Theme.textTertiary) }
-            OutlineGroup(tree, children: \.childrenOrNil) { folder in
-                Label(folder.name, systemImage: "folder")
-                    .contentShape(Rectangle())
-                    .onTapGesture { library.destination = .folder(folder.path) }
-                    .accessibilityIdentifier("folder-\(folder.name)")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Theme.gridBackground)
-        .task {
-            tree = LibraryUtilities.folderTree((try? await library.client.getUniqueOriginalPaths()) ?? [])
-            loaded = true
-        }
-    }
-}
-
-struct FolderPathBar: View {
-    @EnvironmentObject var library: LibraryModel
-    let path: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "folder").foregroundStyle(Theme.textTertiary)
-            Text(path).font(.caption.monospaced()).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.head)
-            Spacer()
-            Button("All Folders") { library.destination = .folders }.buttonStyle(.link)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Theme.panel)
-    }
-}
-
 // MARK: Locked folder
 
 /// Immich's locked folder needs the user's Immich PIN (set up once; different from the DarkRoom PIN).

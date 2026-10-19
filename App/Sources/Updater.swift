@@ -11,8 +11,7 @@ final class Updater: ObservableObject {
 
     private init() {
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
-        let testing = ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] != nil
-        guard !key.isEmpty, !testing else { controller = nil; return }
+        guard !key.isEmpty else { controller = nil; return }
         let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         self.controller = controller
         controller.updater.publisher(for: \.canCheckForUpdates).receive(on: RunLoop.main).assign(to: &$canCheck)

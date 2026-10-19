@@ -41,13 +41,8 @@ final class AppState: ObservableObject {
     private var lastActivity = Date()
     private var idleTimer: Timer?
 
-    /// UI tests launch DarkRoom with an isolated data folder and an in-memory secret store
-    /// (`DARKROOM_DATA_DIR`, `DARKROOM_SECRETS=memory`), so they never touch real accounts.
     static func makeAccountManager() -> AccountManager {
-        let env = ProcessInfo.processInfo.environment
-        let store = env["DARKROOM_DATA_DIR"].map { AccountStore(directory: URL(fileURLWithPath: $0)) } ?? AccountStore()
-        let secrets: SecretStore = env["DARKROOM_SECRETS"] == "memory" ? InMemorySecretStore() : KeychainStore()
-        return AccountManager(store: store, secrets: secrets)
+        AccountManager(store: AccountStore(), secrets: KeychainStore())
     }
 
     /// The running app's state (for the app delegate).
@@ -103,7 +98,6 @@ final class AppState: ObservableObject {
 
     /// Read-only mode per account (nothing is changed in Immich). Used first with a real library.
     static func isReadOnly(_ accountID: UUID) -> Bool {
-        if ProcessInfo.processInfo.environment["DARKROOM_READ_ONLY"] == "1" { return true }
         return UserDefaults.darkRoom.bool(forKey: "readOnly.\(accountID.uuidString)")
     }
     static func setReadOnly(_ on: Bool, for accountID: UUID) {

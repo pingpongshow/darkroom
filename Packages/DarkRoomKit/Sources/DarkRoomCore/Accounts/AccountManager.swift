@@ -180,8 +180,6 @@ public final class AccountManager: ObservableObject {
     }
 
     public static var biometricsAvailable: Bool {
-        // UI tests disable Touch ID so PIN flows are exercised deterministically.
-        if ProcessInfo.processInfo.environment["DARKROOM_DISABLE_BIOMETRICS"] == "1" { return false }
         return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
     }
 

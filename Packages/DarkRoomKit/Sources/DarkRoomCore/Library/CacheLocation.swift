@@ -1,13 +1,10 @@
 import Foundation
 
 /// Where per-account caches (thumbnails, previews, downloaded originals) live:
-/// `~/Library/Caches/DarkRoom/<account>/`, or inside the isolated data folder during tests.
+/// `~/Library/Caches/DarkRoom/<account>/`.
 public enum CacheLocation {
     public static var root: URL {
-        if let data = ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] {
-            return URL(fileURLWithPath: data).appending(path: "Caches")
-        }
-        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "DarkRoom")
+         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "DarkRoom")
     }
 
     public static func account(_ id: UUID) -> URL { root.appending(path: id.uuidString) }

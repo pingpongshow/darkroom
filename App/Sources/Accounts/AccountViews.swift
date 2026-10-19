@@ -221,11 +221,8 @@ struct SignInView: View {
         scanning = true
         let known = state.accounts.accounts.map(\.serverURL)
         let discovery = ServerDiscovery(knownServers: known)
-        // UI tests pass explicit candidates so they never scan the real network.
-        let override = ProcessInfo.processInfo.environment["DARKROOM_DISCOVERY_CANDIDATES"]?
-            .split(separator: ",").compactMap { URL(string: String($0)) }
         scanTask = Task {
-            for await candidate in discovery.scan(candidates: override) {
+            for await candidate in discovery.scan(candidates: nil) {
                 found.append(candidate)
                 if found.count == 1 && (server.isEmpty || !manualEntry) { server = candidate.url.absoluteString }
             }

@@ -152,15 +152,6 @@ public final class TimelineStore: ObservableObject {
         }
     }
 
-    public func changeQuery(_ query: TimelineQuery) async {
-        guard query != self.query else { return }
-        self.query = query
-        sections = []
-        inFlight.values.forEach { $0.cancel() }
-        inFlight = [:]
-        await reload()
-    }
-
     /// Ensures a month's assets are loaded (deduplicates concurrent requests).
     public func loadSection(_ bucket: String) async {
         guard provider == nil else { return }

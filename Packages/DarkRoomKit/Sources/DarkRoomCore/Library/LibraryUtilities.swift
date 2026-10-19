@@ -48,52 +48,6 @@ public enum LibraryUtilities {
 
     // MARK: Folders
 
-    /// A folder in the library's original paths (Immich's folder view).
-    public struct Folder: Identifiable, Hashable, Sendable {
-        public var path: String
-        public var name: String
-        public var children: [Folder]
-        public var id: String { path }
-        public var childrenOrNil: [Folder]? { children.isEmpty ? nil : children }
-    }
-
-    /// Builds a tree from Immich's unique original folder paths, collapsing single-child chains
-    /// at the top (e.g. "/data/library/<user>").
-    public static func folderTree(_ paths: [String]) -> [Folder] {
-        final class Node { var children: [String: Node] = [:] }
-        let root = Node()
-        for path in paths {
-            var node = root
-            for part in path.split(separator: "/").map(String.init) {
-                if node.children[part] == nil { node.children[part] = Node() }
-                node = node.children[part]!
-            }
-        }
-        func build(_ node: Node, prefix: String) -> [Folder] {
-            node.children.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { name in
-                let path = prefix + "/" + name
-                return Folder(path: path, name: name, children: build(node.children[name]!, prefix: path))
-            }
-        }
-        var top = build(root, prefix: "")
-        while top.count == 1, let only = top.first, !only.children.isEmpty, !paths.contains(only.path) { top = only.children }
-        return top
-    }
-
-    /// Photos in a folder and (like Lightroom's default) its subfolders.
-    public static func assets(inFolder path: String, client: ImmichClient, includeSubfolders: Bool = true) async throws -> [TimelineAsset] {
-        var folders = [path]
-        if includeSubfolders {
-            folders += try await client.getUniqueOriginalPaths().filter { $0.hasPrefix(path + "/") }
-        }
-        var all: [AssetResponseDto] = []
-        for folder in folders { all += try await client.getAssetsByOriginalPath(path: folder) }
-        return all
-            .filter { $0.visibility == .timeline || $0.visibility == .archive }
-            .sorted { $0.fileCreatedAt > $1.fileCreatedAt }
-            .map(TimelineAsset.init)
-    }
-
     // MARK: Duplicates
 
     /// Keeps the chosen assets and moves the rest of the group to Immich's trash.

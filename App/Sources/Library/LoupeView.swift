@@ -48,11 +48,6 @@ struct LoupeView: View {
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { library.loupeFrame = $0 }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("loupe")
-            .overlay(alignment: .bottomLeading) {
-                // The shown photo's id, for accessibility tools and UI tests.
-                Text(library.focusedAssetID ?? "").font(.system(size: 1)).opacity(0.01)
-                    .accessibilityIdentifier("loupe-asset-id").allowsHitTesting(false)
-            }
             if let asset = library.focusedAsset, asset.stackID != nil { StackStrip(asset: asset) }
             PresetBar()
             if library.showFilmstrip { FilmstripView().frame(height: 86) }

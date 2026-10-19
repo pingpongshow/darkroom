@@ -74,7 +74,7 @@ enum TipsSetup {
     /// Tips are configured only when the "Show tips" preference is on (and never in UI tests).
     static func configure() {
         let show = UserDefaults.darkRoom.object(forKey: "showTips") as? Bool ?? true
-        guard show, ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] == nil else { return }
+        guard show else { return }
         try? Tips.configure([.displayFrequency(.daily)])
     }
 }

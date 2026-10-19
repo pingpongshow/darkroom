@@ -101,9 +101,10 @@ public actor ImagePipeline {
     }
 
     /// Drops cached renditions of an asset (after an edit or version change).
-    public func invalidate(assetID: String) {
+    /// NSCache can't drop one asset's entries, so decoded images are cleared; disk files are keyed by the
+    /// asset's cache key, so a changed photo is fetched again anyway.
+    public func invalidate(assetID _: String) {
         memory.removeAllObjects()
-        _ = assetID
     }
 
     /// Trims the disk cache to its limit, oldest files first.

@@ -59,13 +59,3 @@ public struct KeychainStore: SecretStore {
         guard status == errSecSuccess || status == errSecItemNotFound else { throw SecretStoreError.keychain(status) }
     }
 }
-
-/// In-memory store for tests and previews.
-public final class InMemorySecretStore: SecretStore, @unchecked Sendable {
-    private var values: [String: Data] = [:]
-    private let lock = NSLock()
-    public init() {}
-    public func set(_ data: Data, for key: String) throws { lock.withLock { values[key] = data } }
-    public func get(_ key: String) throws -> Data? { lock.withLock { values[key] } }
-    public func remove(_ key: String) throws { lock.withLock { values[key] = nil } }
-}

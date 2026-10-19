@@ -18,7 +18,6 @@ public struct Mask: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// AI masks need Apple Vision on the source image.
-    public var usesVision: Bool { components.contains { $0.kind.isVision } }
 }
 
 public struct MaskComponent: Codable, Hashable, Sendable, Identifiable {
@@ -53,10 +52,6 @@ public enum MaskKind: Codable, Hashable, Sendable {
     case luminanceRange(low: Double, high: Double, smoothness: Double)
     /// iPhone portrait depth (0 = near, 1 = far) between `near` and `far`.
     case depthRange(near: Double, far: Double, smoothness: Double)
-
-    public var isVision: Bool {
-        switch self { case .subject, .people, .background: true; default: false }
-    }
 
     public var title: String {
         switch self {

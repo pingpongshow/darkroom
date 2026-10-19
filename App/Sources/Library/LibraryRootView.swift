@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import AppKit
 import ImmichAPI
 import DarkRoomCore
@@ -149,7 +150,7 @@ struct LibraryShell: View {
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
         .onAppear {
             installKeyMonitor()
-            if !UserDefaults.darkRoom.bool(forKey: "tourSeen"), ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] == nil {
+            if !UserDefaults.darkRoom.bool(forKey: "tourSeen") {
                 library.sheet = .tour
             }
         }
@@ -169,7 +170,6 @@ struct LibraryShell: View {
                     if library.showFilterBar { FilterBar() }
                     if library.destination == .trash { TrashBar(timeline: library.timeline) }
                     if let album = library.currentAlbum { AlbumHeader(album: album) }
-                    if case .folder(let path) = library.destination { FolderPathBar(path: path) }
                     GridWithScrubber(timeline: library.timeline)
                 .overlay {
                     TimelineStatusOverlay(timeline: library.timeline, destination: library.destination)
@@ -193,12 +193,11 @@ struct LibraryShell: View {
             case .map: LibraryMapView()
             case .albums: AlbumsView()
             case .tags: TagsView()
-            case .folders: FoldersView()
             case .memories: MemoriesView()
             case .duplicates: DuplicatesView()
             case .bursts: BurstsView()
             case .sharing: SharingView()
-            default: ComingSoonView(destination: library.destination)
+            default: EmptyView()   // every other destination is a photo grid (handled above)
             }
         }
     }
@@ -373,6 +372,7 @@ struct TopBar: View {
             if library.destination.showsGrid {
                 Text("\(timeline.totalCount) \(timeline.totalCount == 1 ? "item" : "items")").font(.caption).foregroundStyle(Theme.textTertiary)
                     .accessibilityIdentifier("item-count")
+                    .popoverTip(CullingTip(), arrowEdge: .top)
             }
             Spacer()
             if library.readOnly {
@@ -401,6 +401,7 @@ struct TopBar: View {
             }
             Button { library.importer.choose() } label: { Image(systemName: "square.and.arrow.down") }
                 .buttonStyle(.borderless).help("Import (⇧⌘I)").accessibilityIdentifier("import-button")
+                .popoverTip(ImportTip(), arrowEdge: .top)
             Button { library.showRightPanel.toggle() } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(.borderless).help("Info panel (Tab)")
             Menu {
@@ -674,15 +675,3 @@ struct EmptyStateView: View {
     }
 }
 
-struct ComingSoonView: View {
-    let destination: LibraryDestination
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: destination.symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Theme.textTertiary)
-            Text(destination.title).font(.title3.weight(.light)).foregroundStyle(Theme.text)
-            Text("This view is being built.").foregroundStyle(Theme.textTertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.gridBackground)
-    }
-}

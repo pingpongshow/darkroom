@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import AppKit
 import UniformTypeIdentifiers
 import ImmichAPI
@@ -23,6 +24,7 @@ struct PresetsPanel: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Presets").panelHeader()
+                    .popoverTip(DevelopTip(), arrowEdge: .leading)
                 Spacer()
                 Menu {
                     Button("Save Preset…") { showSave = true }.disabled(develop.recipe.isIdentity)

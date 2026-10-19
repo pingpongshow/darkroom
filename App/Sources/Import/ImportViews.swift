@@ -14,7 +14,6 @@ final class ImportModel: ObservableObject {
     @Published var options = ImportOptions()
     @Published var progress: (done: Int, total: Int, current: String)?
     @Published var isPaused = false
-    @Published var lastError: String?
     @Published var pendingCard: URL?
     let queue: ImportQueue
     var queueClient: ImmichClient { library.client }
@@ -29,10 +28,6 @@ final class ImportModel: ObservableObject {
         queue = ImportQueue(client: library.client, file: file)
         Task { if await queue.pendingCount > 0 { library.flash("Resuming an unfinished import…"); await run() } }
         watcher = FolderWatcher(importer: self, accountID: library.session.account.id)
-        // UI tests can't drive a file picker; they pass paths to review instead.
-        if let paths = ProcessInfo.processInfo.environment["DARKROOM_TEST_IMPORT"], ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.scan(paths.split(separator: ":").map { URL(fileURLWithPath: String($0)) }) }
-        }
         mountObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { [weak self] note in
             guard let volume = note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL, let card = ImportModel.cardRoot(volume) else { return }
             MainActor.assumeIsolated { self?.pendingCard = card }

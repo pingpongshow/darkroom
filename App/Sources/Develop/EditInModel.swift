@@ -40,7 +40,7 @@ final class EditInModel: ObservableObject {
     func edit(_ ids: [String], in editor: CompanionEditor?) {
         let develop = library.develop
         // Ask for Accessibility (to notice when the photo's window closes) once; never during UI tests.
-        if !askedAccessibility, ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] == nil {
+        if !askedAccessibility {
             askedAccessibility = true
             _ = EditSession.requestAccessibility()
         }
@@ -138,8 +138,10 @@ final class EditInModel: ObservableObject {
         objectWillChange.send()
     }
 
-    var keptEdits: [URL] {
-        ((try? FileManager.default.contentsOfDirectory(at: keptRoot, includingPropertiesForKeys: nil)) ?? []).sorted { $0.lastPathComponent < $1.lastPathComponent }
+    /// Opens the Kept Edits folder (layered / project files kept on this Mac) in Finder.
+    func showKeptEdits() {
+        try? FileManager.default.createDirectory(at: keptRoot, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([keptRoot])
     }
 }
 

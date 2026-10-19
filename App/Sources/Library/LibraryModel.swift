@@ -5,8 +5,7 @@ import DarkRoomCore
 /// Library areas shown in the sidebar.
 enum LibraryDestination: Hashable {
     case photos, explore, map, people, places, albums, sharing, favorites, recentlyAdded, recentlyEdited, memories
-    case archive, locked, trash, tags, folders, duplicates, bursts, largeFiles
-    case folder(String)
+    case archive, locked, trash, tags, duplicates, bursts, largeFiles
     case album(String), person(String), tag(String), partner(String)
     case search(SearchQuery)
     case mapSelection(MapSelection)
@@ -28,11 +27,9 @@ enum LibraryDestination: Hashable {
         case .locked: "Locked Folder"
         case .trash: "Trash"
         case .tags: "Tags"
-        case .folders: "Folders"
         case .duplicates: "Duplicates"
         case .bursts: "Bursts"
         case .largeFiles: "Large Files"
-        case .folder(let path): (path as NSString).lastPathComponent
         case .album: "Album"
         case .person: "Person"
         case .tag: "Tag"
@@ -59,11 +56,9 @@ enum LibraryDestination: Hashable {
         case .locked: "lock"
         case .trash: "trash"
         case .tags, .tag: "tag"
-        case .folders: "folder"
         case .duplicates: "square.on.square"
         case .bursts: "square.stack.3d.forward.dottedline"
         case .largeFiles: "externaldrive"
-        case .folder: "folder"
         case .person: "person.crop.circle"
         case .search: "magnifyingglass"
         case .mapSelection: "map"
@@ -73,7 +68,7 @@ enum LibraryDestination: Hashable {
     /// Whether the destination shows a photo grid (timeline or a fixed result set).
     var showsGrid: Bool {
         switch self {
-        case .search, .mapSelection, .recentlyAdded, .recentlyEdited, .largeFiles, .folder, .locked: true
+        case .search, .mapSelection, .recentlyAdded, .recentlyEdited, .largeFiles, .locked: true
         default: timelineQuery != nil
         }
     }
@@ -356,9 +351,6 @@ final class LibraryModel: ObservableObject {
             return TimelineStore(client: client, groupByMonth: false, flatTitle: "Largest first") {
                 try await LibraryUtilities.largeFiles(client).map(TimelineAsset.init)
             }
-        case .folder(let path):
-            let client = self.client
-            return TimelineStore(client: client) { try await LibraryUtilities.assets(inFolder: path, client: client) }
         case .mapSelection(let selection):
             let ids = Set(selection.assetIDs)
             return TimelineStore(client: client) { [weak self] in

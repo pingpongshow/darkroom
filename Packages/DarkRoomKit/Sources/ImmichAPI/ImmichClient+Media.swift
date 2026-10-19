@@ -28,10 +28,6 @@ public extension ImmichClient {
         makeRequest("GET", "/people/\(personID.pathEscaped)/thumbnail").url!
     }
 
-    func profileImageURL(userID: String) -> URL {
-        makeRequest("GET", "/users/\(userID.pathEscaped)/profile-image").url!
-    }
-
     // MARK: Data
 
     /// Downloads an image rendition into memory.
@@ -42,10 +38,6 @@ public extension ImmichClient {
 
     func personThumbnail(personID: String) async throws -> Data {
         try await perform(authorized(personThumbnailURL(personID: personID)), path: "/people/{id}/thumbnail")
-    }
-
-    func profileImage(userID: String) async throws -> Data {
-        try await perform(authorized(profileImageURL(userID: userID)), path: "/users/{id}/profile-image")
     }
 
     /// Downloads an asset's original to `destination` (streamed to disk), returning the file URL.
@@ -68,19 +60,6 @@ public extension ImmichClient {
         try? fm.removeItem(at: destination)
         try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.moveItem(at: temp, to: destination)
-        return destination
-    }
-
-    /// `POST /download/archive` - zip of the given assets, saved to `destination`.
-    @discardableResult
-    func downloadArchive(assetIDs: [String], to destination: URL) async throws -> URL {
-        var request = makeRequest("POST", "/download/archive")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder.immich.encode(AssetIdsDto(assetIds: assetIDs))
-        let (temp, response) = try await session.download(for: request)
-        try Self.check(response, data: Data(), path: "/download/archive")
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: temp, to: destination)
         return destination
     }
 

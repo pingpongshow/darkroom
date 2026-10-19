@@ -27,6 +27,8 @@ struct PreferencesView: View {
                     Stepper("\(Int(slideshowSeconds)) seconds per photo", value: $slideshowSeconds, in: 2...30)
                     Toggle("Slow zoom (Ken Burns)", isOn: $kenBurns)
                 }
+                Section("Storage") { CacheSettings() }
+                Section("Updates") { UpdateSettings() }
             }
             .tabItem { Label("General", systemImage: "gearshape") }
 
@@ -73,6 +75,7 @@ struct PreferencesView: View {
 
 /// Default companion editors per file type, and whether to keep layered files.
 struct EditorsPreferences: View {
+    @EnvironmentObject var state: AppState
     @AppStorage("editorRAW", store: .darkRoom) private var rawEditor = ""
     @AppStorage("editorImage", store: .darkRoom) private var imageEditor = ""
     @AppStorage("keepEditableFiles", store: .darkRoom) private var keep = false
@@ -91,10 +94,8 @@ struct EditorsPreferences: View {
             Toggle("Keep editable files (layers, sidecars) on this Mac by default", isOn: $keep)
             Text("Closing the photo in the editor uploads the result as the edited version. Kept files stay on this Mac only.")
                 .font(.caption).foregroundStyle(.secondary)
-            Button("Show Kept Edits in Finder") {
-                let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "DarkRoom")
-                NSWorkspace.shared.activateFileViewerSelecting([base])
-            }
+            Button("Show Kept Edits in Finder") { state.activeLibrary?.editIn.showKeptEdits() }
+                .disabled(state.activeLibrary == nil)
         }
         .task { editors = CompanionEditor.installed() }
     }
@@ -123,4 +124,46 @@ struct ImportPreferences: View {
         }
     }
     private func save() { UserDefaults.darkRoom.set(folders, forKey: "watchedFolders") }
+}
+
+/// The signed-in person's thumbnail / preview / original cache on this Mac, with a Clear button.
+struct CacheSettings: View {
+    @EnvironmentObject var state: AppState
+    @State private var bytes: Int?
+
+    var body: some View {
+        HStack {
+            Text("Cached photos on this Mac")
+            Spacer()
+            Text(bytes.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "…")
+                .foregroundStyle(.secondary)
+            Button("Clear Cache") {
+                guard let pipeline = state.activeLibrary?.pipeline else { return }
+                Task { await pipeline.clearDiskCache(); await measure() }
+            }
+            .disabled(state.activeLibrary == nil || bytes == 0)
+        }
+        .task(id: state.activeLibrary.map(ObjectIdentifier.init)) { await measure() }
+        Text("Thumbnails, previews and originals downloaded for editing. Everything can be downloaded again from Immich.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func measure() async {
+        guard let pipeline = state.activeLibrary?.pipeline else { bytes = nil; return }
+        bytes = await pipeline.diskUsageBytes
+    }
+}
+
+/// Automatic update checks (Sparkle) and Check Now.
+struct UpdateSettings: View {
+    @ObservedObject private var updater = Updater.shared
+    @State private var automatic = Updater.shared.automaticallyChecks
+
+    var body: some View {
+        Toggle("Check for updates automatically", isOn: $automatic)
+            .onChange(of: automatic) { _, on in updater.automaticallyChecks = on }
+            .disabled(!updater.isAvailable)
+        Button("Check Now") { updater.checkForUpdates() }
+            .disabled(!updater.isAvailable || !updater.canCheck)
+    }
 }

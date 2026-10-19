@@ -11,7 +11,6 @@ enum Theme {
     static let text = dynamic(dark: 0xD8D8D8, light: 0x222222)
     static let textSecondary = dynamic(dark: 0x9A9A9A, light: 0x5E5E5E)
     static let textTertiary = dynamic(dark: 0x6E6E6E, light: 0x8C8C8C)
-    static let accent = dynamic(dark: 0xE6E6E6, light: 0x1D1D1D)
     static let highlight = Color(red: 0.36, green: 0.62, blue: 0.98)
     static let danger = Color(red: 0.92, green: 0.36, blue: 0.33)
     static let gridBackground = dynamic(dark: 0x161616, light: 0xDDDDDD)
@@ -64,13 +63,8 @@ extension View {
 }
 
 extension UserDefaults {
-    /// App preferences. UI tests (DARKROOM_DATA_DIR set) get a fresh, separate suite so they never
-    /// read or change the user's real settings.
+    /// App preferences.
     nonisolated(unsafe) static let darkRoom: UserDefaults = {
-        guard ProcessInfo.processInfo.environment["DARKROOM_DATA_DIR"] != nil else { return .standard }
-        let suite = "com.pingpongshow.darkroom.uitests"
-        let defaults = UserDefaults(suiteName: suite) ?? .standard
-        defaults.removePersistentDomain(forName: suite)
-        return defaults
+        .standard
     }()
 }

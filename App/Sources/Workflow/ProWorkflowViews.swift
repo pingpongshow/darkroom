@@ -225,19 +225,10 @@ struct ExportSheet: View {
     }
 
     private func export() {
-        let env = ProcessInfo.processInfo.environment
-        let testFolder = env["DARKROOM_DATA_DIR"].flatMap { _ in env["DARKROOM_TEST_EXPORT"] }.map { URL(fileURLWithPath: $0) }
-        let folder: URL
-        if let testFolder {
-            try? FileManager.default.createDirectory(at: testFolder, withIntermediateDirectories: true)
-            folder = testFolder
-        } else {
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
-            panel.prompt = "Export Here"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            folder = url
-        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+        panel.prompt = "Export Here"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
         running = true
         let settings = self.settings, ids = self.ids, client = library.client
         Task {
@@ -262,7 +253,7 @@ struct ExportSheet: View {
             }
             running = false
             library.flash("Exported \(done) item\(done == 1 ? "" : "s")")
-            if testFolder == nil { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
             dismiss()
         }
     }
