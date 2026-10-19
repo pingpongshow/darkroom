@@ -37,7 +37,6 @@ struct LibraryShell: View {
     @EnvironmentObject var library: LibraryModel
     @Environment(\.undoManager) private var undoManager
     @State private var keyMonitor: Any?
-    @State private var mouseMonitor: Any?
     @State private var confirmEmptyTrash = false
     @State private var trashCount = 0
 
@@ -89,6 +88,20 @@ struct LibraryShell: View {
         .sheet(item: $library.sheet) { sheet in
             LibrarySheetView(sheet: sheet).environmentObject(library)
         }
+        .confirmationDialog("Save changes to this photo?", isPresented: Binding(
+            get: { library.pendingDevelopLeave != nil }, set: { if !$0 { library.pendingDevelopLeave = nil } }),
+            presenting: library.pendingDevelopLeave) { pending in
+            Button("Save") {
+                let develop = library.develop
+                Task {
+                    await develop.save()
+                    if develop.error == nil { pending.action() }
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Don’t Save", role: .destructive) { library.develop.discardChanges(); pending.action() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: { _ in Text("Your edits haven’t been saved to Immich yet.") }
         .confirmationDialog("Move all rejected photos to Immich’s trash?", isPresented: $library.confirmTrashRejects) {
             Button("Move Rejects to Trash", role: .destructive) { library.trashRejects() }
         } message: { Text("They can be restored from the trash until Immich empties it.") }
@@ -141,7 +154,6 @@ struct LibraryShell: View {
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-            if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         }
     }
 
@@ -192,16 +204,6 @@ struct LibraryShell: View {
     // MARK: Lightroom keyboard shortcuts
 
     private func installKeyMonitor() {
-        // Right-click on a Live Photo in the loupe plays it (the context menu still opens).
-        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
-            if library.mode == .loupe, library.focusedAsset?.isLivePhoto == true,
-               let content = event.window?.contentView {
-                let p = event.locationInWindow
-                let point = CGPoint(x: p.x, y: content.bounds.height - p.y)
-                        if library.loupeFrame.contains(point) { library.playingLive = true }
-            }
-            return event
-        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Never steal keys from text fields.
             if let text = event.window?.firstResponder as? NSTextView, text.isEditable,
@@ -255,9 +257,9 @@ struct LibraryShell: View {
         default: break
         }
         switch key {
-        case "g": library.mode = .grid; return true
-        case "e": library.toggleMode(.loupe); return true
-        case "d": library.toggleMode(.develop); return true
+        case "g": library.leaveDevelop { library.mode = .grid }; return true
+        case "e": library.leaveDevelop { library.toggleMode(.loupe) }; return true
+        case "d": library.leaveDevelop { library.toggleMode(.develop) }; return true
         case "\\" where library.mode == .grid: library.showFilterBar.toggle(); return true
         case "i": library.showInfoOverlay.toggle(); return true
         case "f": NSApp.keyWindow?.toggleFullScreen(nil); return true

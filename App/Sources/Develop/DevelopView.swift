@@ -90,7 +90,7 @@ struct DevelopToolbar: View {
                 Divider()
                 Button("New Snapshot…") { snapshotName = "Snapshot \(develop.recipe.snapshots.count + 1)"; showSnapshot = true }
                 Divider()
-                Button("Reset All") { develop.reset() }
+                Button("Reset All Adjustments") { develop.reset() }
                 Button("Revert to Original", role: .destructive) { develop.revertToOriginal() }
                     .disabled(develop.context?.version == nil && develop.context?.builtInEdits.isEmpty != false)
             } label: { Image(systemName: "ellipsis.circle") }
@@ -101,13 +101,26 @@ struct DevelopToolbar: View {
             if let context = develop.context, context.version != nil {
                 Label("Edited version", systemImage: "square.stack.fill").font(.caption).foregroundStyle(Theme.textSecondary)
             }
-            Button("Done") {
-                NSApp.keyWindow?.makeFirstResponder(nil)
-                Task { await develop.save(); library.mode = .loupe }
+            if develop.hasChanges {
+                Text("Unsaved changes").font(.caption).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("develop-unsaved")
             }
-                .keyboardShortcut(.defaultAction)
+            Button("Reset") { develop.resetToSaved() }
+                .disabled(!develop.hasChanges || develop.isSaving)
+                .help(develop.context?.version == nil
+                      ? "Undo all changes since you opened the photo (back to the original); stay in the editor"
+                      : "Undo all changes since the last save; stay in the editor")
+                .accessibilityIdentifier("develop-reset")
+            Button("Cancel") { library.cancelEditor() }
                 .disabled(develop.isSaving)
-                .accessibilityIdentifier("develop-done")
+                .help("Discard unsaved changes and close the editor")
+                .accessibilityIdentifier("develop-cancel")
+            Button("Save") { library.saveAndCloseEditor() }
+                .keyboardShortcut("s", modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .disabled(!develop.hasChanges || develop.isSaving)
+                .help("Save the changes to Immich and close the editor (⌘S)")
+                .accessibilityIdentifier("develop-save")
         }
         .labelStyle(DevelopToolLabelStyle())
         .controlSize(.small)

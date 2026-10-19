@@ -48,6 +48,10 @@ final class DevelopModel: ObservableObject {
     private var undoStack: [EditRecipe] = []
     private var redoStack: [EditRecipe] = []
     private var committed = EditRecipe()
+    /// The recipe as last saved to Immich (the original's when never edited). Reset and Cancel return here.
+    @Published private(set) var savedRecipe = EditRecipe()
+    /// Unsaved changes since the photo was opened or last saved.
+    var hasChanges: Bool { canEdit && recipe != savedRecipe }
     static var clipboard: (recipe: EditRecipe, panels: Set<DevelopPanel>)?
 
     init(library: LibraryModel) {
@@ -87,6 +91,7 @@ final class DevelopModel: ObservableObject {
             status = canEdit ? nil : (context.original.type == .video
                 ? "Videos can be rotated from the Photo menu" : "View only: only your own photos can be edited")
             committed = context.recipe
+            savedRecipe = context.recipe
             recipe = context.recipe
             dirty = false
             if let version = context.version, let editor = try? await versions.record(of: version.id)?.editor {
@@ -503,6 +508,7 @@ final class DevelopModel: ObservableObject {
                 Task { @MainActor in self?.status = message }
             }
             dirty = false
+            savedRecipe = recipe
             status = nil
             switch outcome {
             case .unchanged: break
@@ -523,6 +529,24 @@ final class DevelopModel: ObservableObject {
             self.error = "Couldn’t save: \(error.localizedDescription)"
             status = nil
         }
+    }
+
+    /// Reset: back to the saved version (or the original if it was never edited), staying in the editor. Undoable.
+    func resetToSaved() {
+        let saved = savedRecipe
+        set { r in let s = r.snapshots; r = saved; r.snapshots = s }
+        appliedPreset = nil
+        cropping = false; eyedropper = false; tool = .none
+    }
+
+    /// Cancel: throw away unsaved changes (nothing is sent to Immich).
+    func discardChanges() {
+        appliedPreset = nil
+        cropping = false; eyedropper = false; tool = .none
+        committed = savedRecipe
+        recipe = savedRecipe
+        undoStack = []; redoStack = []
+        dirty = false
     }
 
     func revertToOriginal() {

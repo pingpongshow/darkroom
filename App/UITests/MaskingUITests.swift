@@ -60,8 +60,7 @@ final class MaskingUITests: XCTestCase {
 
         // Reset so leaving uploads nothing.
         app.typeKey(.escape, modifierFlags: [])
-        any(app, "develop-more").click()
-        app.menuItems["Reset All"].click()
+        app.buttons["develop-cancel"].click()   // Cancel discards the edits; nothing is uploaded
         sleep(1)
         app.typeKey(.escape, modifierFlags: [])
     }

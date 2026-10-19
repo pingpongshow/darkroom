@@ -118,9 +118,39 @@ final class LibraryModel: ObservableObject {
     @Published var timeline: TimelineStore
     @Published var mode: ViewMode = .grid {
         didSet {
-            // Leaving Develop saves the edit to Immich.
-            if oldValue == .develop, mode != .develop, let develop = developModel { Task { await develop.save() } }
+            // Paths that can't ask (e.g. picking another sidebar item) keep unsaved edits by saving them.
+            // Back, Esc, the arrows and the mode keys ask first (see leaveDevelop).
+            if oldValue == .develop, mode != .develop, let develop = developModel, develop.hasChanges { Task { await develop.save() } }
         }
+    }
+    /// Shown when leaving the editor with unsaved changes: Save, Don't Save or keep editing.
+    @Published var pendingDevelopLeave: PendingLeave?
+
+    struct PendingLeave: Identifiable {
+        let id = UUID()
+        let action: @MainActor () -> Void
+    }
+
+    /// Runs `action` after the editor's unsaved changes are saved or discarded (asking first), or right away.
+    func leaveDevelop(then action: @escaping @MainActor () -> Void) {
+        guard mode == .develop, let develop = developModel, develop.hasChanges else { action(); return }
+        pendingDevelopLeave = PendingLeave(action: action)
+    }
+
+    /// Editor Save: save to Immich, then back to the photo.
+    func saveAndCloseEditor() {
+        let develop = self.develop
+        Task {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            await develop.save()
+            if develop.error == nil { mode = .loupe }
+        }
+    }
+
+    /// Editor Cancel: discard unsaved changes and go back to the photo.
+    func cancelEditor() {
+        develop.discardChanges()
+        mode = .loupe
     }
     /// The Develop module's state (created on first use).
     var develop: DevelopModel {
@@ -355,7 +385,7 @@ final class LibraryModel: ObservableObject {
     /// Back one level: Develop → photo → grid (the grid shows the photo you were on).
     func back() {
         switch mode {
-        case .develop: mode = .loupe
+        case .develop: leaveDevelop { [weak self] in self?.mode = .loupe }
         case .grid: break
         default:
             if let id = focusedAssetID { selection = [id] }
@@ -370,6 +400,10 @@ final class LibraryModel: ObservableObject {
     }
 
     func step(_ delta: Int) {
+        if mode == .develop, developModel?.hasChanges == true {
+            leaveDevelop { [weak self] in self?.step(delta) }
+            return
+        }
         let assets = orderedAssets
         guard !assets.isEmpty else { return }
         let index = focusedAssetID.flatMap { id in assets.firstIndex { $0.id == id } } ?? 0

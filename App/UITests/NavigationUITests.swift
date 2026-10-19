@@ -37,6 +37,16 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
         XCTAssertTrue(any(app, "develop-rotate-left").exists && any(app, "develop-flip").exists)
         UITestSupport.screenshot("fb-1-develop-tools", in: self)
+        // Cancel discards changes and closes the editor without saving.
+        app.sliders["slider-Exposure"].adjust(toNormalizedSliderPosition: 0.6)
+        XCTAssertTrue(any(app, "develop-unsaved").waitForExistence(timeout: 5))
+        app.buttons["develop-cancel"].click()
+        XCTAssertTrue(any(app, "loupe").waitForExistence(timeout: 10), "Cancel shows the photo")
+        XCTAssertFalse(app.staticTexts["status-message"].exists && ((app.staticTexts["status-message"].value as? String) ?? "").contains("Saved"),
+                       "Cancel saves nothing")
+        any(app, "edit-photo").click()
+        XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
+        XCTAssertFalse(any(app, "develop-unsaved").exists, "Reopening shows no leftover changes")
         any(app, "back-to-grid").click()
         XCTAssertTrue(any(app, "loupe").waitForExistence(timeout: 10), "Back from Develop shows the photo")
         // Side arrows move between photos.
@@ -53,15 +63,14 @@ final class NavigationUITests: XCTestCase {
         sleep(1)
         XCTAssertTrue(shown.isHittable, "…and it is on screen")
 
-        // Right-click on a Live Photo in the loupe plays it.
+        // A single click on a Live Photo in the loupe plays it.
         cells(app).firstMatch.doubleClick()
         let play = any(app, "play-live")
         var steps = 0
         while !play.waitForExistence(timeout: 1.5) && steps < 30 { app.typeKey(.rightArrow, modifierFlags: []); steps += 1 }
         if play.exists {
-            any(app, "loupe").rightClick()
-            XCTAssertTrue(any(app, "video-player").waitForExistence(timeout: 5), "Right-click plays the Live Photo")
-            app.typeKey(.escape, modifierFlags: [])   // closes the menu
+            any(app, "loupe").click()
+            XCTAssertTrue(any(app, "video-player").waitForExistence(timeout: 5), "A click plays the Live Photo")
         }
         app.typeKey("g", modifierFlags: [])
 

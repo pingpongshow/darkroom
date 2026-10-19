@@ -65,8 +65,24 @@ final class DevelopUITests: XCTestCase {
         app.buttons["crop-apply"].click()
         sleep(2)
 
-        // Done saves a stacked version.
-        app.buttons["develop-done"].click()
+        // Reset returns to the saved state (here the original) and stays; ⌘Z brings the edits back.
+        XCTAssertTrue(any(app, "develop-unsaved").exists, "Unsaved changes are shown")
+        app.buttons["develop-reset"].click()
+        XCTAssertFalse(any(app, "develop-unsaved").waitForExistence(timeout: 2), "Reset clears the changes")
+        XCTAssertTrue(preview.exists, "Still in the editor")
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(any(app, "develop-unsaved").waitForExistence(timeout: 3), "Undo brings them back")
+
+        // Esc with unsaved changes asks; Keep Editing stays.
+        app.typeKey(.escape, modifierFlags: [])
+        let keep = app.sheets.buttons["Keep Editing"]   // (the Touch Bar has a copy of the button too)
+        XCTAssertTrue(keep.waitForExistence(timeout: 5), "Leaving with unsaved changes asks first")
+        keep.click()
+        XCTAssertFalse(app.sheets.firstMatch.waitForExistence(timeout: 1), "Dialog closed")
+        XCTAssertTrue(preview.exists)
+
+        // Save saves a stacked version and closes the editor.
+        app.buttons["develop-save"].click()
         status(app, "Saved edited version", timeout: 120)
         sleep(2)
         UITestSupport.screenshot("m4-6-saved", in: self)

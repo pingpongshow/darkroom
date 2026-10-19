@@ -28,7 +28,8 @@ struct LoupeView: View {
                             .accessibilityIdentifier("video-player")
                     } else {
                         ZoomableImageView(image: image, onZoomBeyondFit: { loadFullSize(asset) },
-                                          onSwipe: { library.step($0) })
+                                          onSwipe: { library.step($0) },
+                                          onClick: { if asset.isLivePhoto { library.playingLive = true } })
                             .id(asset.id)
                         liveButton(asset)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -68,7 +69,7 @@ struct LoupeView: View {
             }
             .buttonStyle(.plain)
             .padding(12)
-            .help("Play Live Photo (Space)")
+            .help("Play Live Photo (click the photo or press Space)")
             .accessibilityIdentifier("play-live")
         }
     }
@@ -107,17 +108,20 @@ struct ZoomableImageView: NSViewRepresentable {
     var image: CGImage?
     var onZoomBeyondFit: () -> Void
     var onSwipe: (Int) -> Void = { _ in }
+    var onClick: () -> Void = {}
 
     func makeNSView(context: Context) -> ZoomScrollView {
         let scroll = ZoomScrollView()
         scroll.onZoomBeyondFit = onZoomBeyondFit
         scroll.onSwipe = onSwipe
+        scroll.onClick = onClick
         return scroll
     }
 
     func updateNSView(_ scroll: ZoomScrollView, context: Context) {
         scroll.onZoomBeyondFit = onZoomBeyondFit
         scroll.onSwipe = onSwipe
+        scroll.onClick = onClick
         scroll.setImage(image)
     }
 }
@@ -129,6 +133,10 @@ final class ZoomScrollView: NSScrollView {
     var onZoomBeyondFit: (() -> Void)?
     /// Two-finger horizontal swipe while the photo fits the view: +1 next, -1 previous.
     var onSwipe: ((Int) -> Void)?
+    /// A single click (not part of a double-click): plays a Live Photo.
+    var onClick: (() -> Void)?
+    private var pendingClick: DispatchWorkItem?
+    private var mouseDownPoint: NSPoint?
     private var swipeDistance: CGFloat = 0
     private var swipeFired = false
     private var requestedFull = false
@@ -209,7 +217,20 @@ final class ZoomScrollView: NSScrollView {
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) { swipeDistance = 0 }
     }
 
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        guard event.clickCount == 1, let start = mouseDownPoint else { return }
+        let end = event.locationInWindow
+        guard hypot(end.x - start.x, end.y - start.y) < 4 else { return }
+        // Wait out the double-click interval so a double-click (zoom) doesn't also play.
+        let work = DispatchWorkItem { [weak self] in self?.onClick?() }
+        pendingClick = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        mouseDownPoint = event.locationInWindow
+        if event.clickCount >= 2 { pendingClick?.cancel(); pendingClick = nil }
         if event.clickCount == 2 {
             let point = imageView.convert(event.locationInWindow, from: nil)
             if magnification > fitMagnification(for: naturalSize) * 1.01 { animator().magnification = fitMagnification(for: naturalSize) }

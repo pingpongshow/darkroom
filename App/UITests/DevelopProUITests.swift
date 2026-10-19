@@ -51,8 +51,7 @@ final class DevelopProUITests: XCTestCase {
         hdr.click()
         sleep(3)
         UITestSupport.screenshot("m4c2-2-develop-pro", in: self)
-        any(app, "develop-more").click()
-        app.menuItems["Reset All"].click()
+        app.buttons["develop-cancel"].click()   // Cancel discards the edits; nothing is uploaded
         sleep(1)
         app.typeKey(.escape, modifierFlags: [])
     }
