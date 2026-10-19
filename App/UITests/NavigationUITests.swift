@@ -30,6 +30,10 @@ final class NavigationUITests: XCTestCase {
         let returned = app.images[id]
         XCTAssertTrue(returned.waitForExistence(timeout: 10))
         XCTAssertTrue(returned.isHittable, "Grid returns to the photo you were on")
+        // Info panel: the date and location values are the edit links; one Edit button (no Develop segment).
+        XCTAssertTrue(any(app, "info-edit-date").waitForExistence(timeout: 10), "Date is a link")
+        XCTAssertTrue(any(app, "info-edit-location").exists, "Location is a link")
+        XCTAssertEqual(any(app, "mode-picker").radioButtons.count, 2, "Grid and single-photo only")
 
         // Edit button opens Develop with labelled tools; Back goes to the photo, then to the grid.
         returned.click()

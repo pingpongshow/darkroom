@@ -169,23 +169,22 @@ struct InfoPanel: View {
                 if let asset = details.asset {
                     section("File") {
                         row("Name", asset.originalFileName)
-                        row("Date", ImmichDate.parse(asset.localDateTime).map {
-                            $0.formatted(Date.FormatStyle(date: .long, time: .shortened, timeZone: TimeZone(identifier: "UTC")!)) } ?? "")
+                        linkRow("Date", ImmichDate.parse(asset.localDateTime).map {
+                            $0.formatted(Date.FormatStyle(date: .long, time: .shortened, timeZone: TimeZone(identifier: "UTC")!)) } ?? "Add date",
+                                help: "Change the date and time", id: "info-edit-date") { library.sheet = .dateTime(library.targetIDs) }
+                        linkRow("Location", placeText(asset) ?? "Add location", help: "Change the location", id: "info-edit-location") {
+                            library.sheet = .geotag(library.targetIDs)
+                        }
                         if let e = asset.exifInfo {
                             if let mp = ExifText.megapixels(e) { row("Size", mp) }
                             if let fs = ExifText.fileSize(e) { row("File size", fs) }
                         }
                         row("Type", asset.livePhotoVideoId != nil ? "Live Photo" : asset.type.rawValue.capitalized)
-                        HStack(spacing: 12) {
-                            Button { library.toggleFavorite() } label: {
-                                Image(systemName: asset.isFavorite ? "heart.fill" : "heart")
-                                    .foregroundStyle(asset.isFavorite ? Color.pink : Theme.textSecondary)
-                            }
-                            .buttonStyle(.borderless).help("Favorite (H)").accessibilityIdentifier("info-favorite")
-                            Button("Date…") { library.sheet = .dateTime(library.targetIDs) }.buttonStyle(.link)
-                                .accessibilityIdentifier("info-edit-date")
-                            Button("Location…") { library.sheet = .geotag(library.targetIDs) }.buttonStyle(.link)
+                        Button { library.toggleFavorite() } label: {
+                            Image(systemName: asset.isFavorite ? "heart.fill" : "heart")
+                                .foregroundStyle(asset.isFavorite ? Color.pink : Theme.textSecondary)
                         }
+                        .buttonStyle(.borderless).help("Favorite (H)").accessibilityIdentifier("info-favorite")
                         .padding(.top, 2)
                     }
                     if let e = asset.exifInfo, e.make != nil || e.model != nil {
@@ -196,8 +195,7 @@ struct InfoPanel: View {
                         }
                     }
                     if let e = asset.exifInfo, let lat = e.latitude, let lon = e.longitude {
-                        section("Location") {
-                            row("Place", [e.city, e.state, e.country].compactMap { $0 }.joined(separator: ", "))
+                        section("Map") {
                             Map(initialPosition: .region(MKCoordinateRegion(center: .init(latitude: lat, longitude: lon),
                                                                             span: .init(latitudeDelta: 0.05, longitudeDelta: 0.05)))) {
                                 Marker("", coordinate: .init(latitude: lat, longitude: lon))
@@ -205,11 +203,6 @@ struct InfoPanel: View {
                             .frame(height: 140)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .id(asset.id)
-                        }
-                    }
-                    if let people = asset.people, !people.isEmpty {
-                        section("People") {
-                            Text(people.map { $0.name.isEmpty ? "Unnamed" : $0.name }.joined(separator: ", ")).foregroundStyle(Theme.text)
                         }
                     }
                     if !details.albums.isEmpty {
@@ -243,6 +236,22 @@ struct InfoPanel: View {
                             }
                         }
                         .help("Rate (0–5)")
+                    }
+                    if let people = asset.people?.filter({ !$0.isHidden }), !people.isEmpty {
+                        section("People") {
+                            ForEach(people, id: \.id) { person in
+                                Button { library.personNames[person.id] = person.name; library.destination = .person(person.id) } label: {
+                                    HStack(spacing: 8) {
+                                        FaceView(person: person, size: 22)
+                                        Text(person.name.isEmpty ? "Unnamed person" : person.name)
+                                            .foregroundStyle(person.name.isEmpty ? Theme.textTertiary : Theme.text)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .help("Show all photos of \(person.name.isEmpty ? "this person" : person.name)")
+                                .accessibilityIdentifier("info-person-\(person.id)")
+                            }
+                        }
                     }
                 } else if library.focusedAssetID == nil {
                     Text("Select a photo to see its details.").foregroundStyle(Theme.textTertiary)
@@ -286,6 +295,24 @@ struct InfoPanel: View {
             Text(title).panelHeader()
             content()
         }
+    }
+
+    /// A value that is itself the link to edit it (date, location).
+    private func linkRow(_ label: String, _ value: String, help: String, id: String, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(Theme.textSecondary).frame(width: 72, alignment: .leading)
+            Button(action: action) { Text(value).multilineTextAlignment(.leading) }
+                .buttonStyle(.link)
+                .disabled(library.client.writes.isReadOnly)
+                .help(help)
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    private func placeText(_ asset: AssetResponseDto) -> String? {
+        guard let e = asset.exifInfo, let lat = e.latitude, let lon = e.longitude else { return nil }
+        let place = [e.city, e.state, e.country].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        return place.isEmpty ? String(format: "%.4f, %.4f", lat, lon) : place
     }
 
     private func row(_ label: String, _ value: String) -> some View {

@@ -382,13 +382,12 @@ struct TopBar: View {
             }
             SearchField()
             if library.destination.showsGrid {
-                Picker("", selection: Binding(get: { library.mode == .develop ? ViewMode.develop : (library.mode == .grid ? .grid : .loupe) },
+                Picker("", selection: Binding(get: { library.mode == .grid ? ViewMode.grid : .loupe },
                                               set: { library.mode == $0 ? () : library.toggleMode($0) })) {
                     Image(systemName: "square.grid.3x3").tag(ViewMode.grid).help("Grid (G)")
-                    Image(systemName: "rectangle").tag(ViewMode.loupe).help("Loupe (E)")
-                    Image(systemName: "slider.horizontal.3").tag(ViewMode.develop).help("Develop (D)")
+                    Image(systemName: "rectangle").tag(ViewMode.loupe).help("Single photo (E)")
                 }
-                .pickerStyle(.segmented).frame(width: 130)
+                .pickerStyle(.segmented).frame(width: 88)
                 .accessibilityIdentifier("mode-picker")
                 if library.mode == .loupe || library.mode == .grid {
                     Button { library.toggleMode(.develop) } label: { Label("Edit", systemImage: "slider.horizontal.3") }

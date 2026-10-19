@@ -1,7 +1,6 @@
 name: Release
+# Manual only: local releases (scripts/release.sh) create the v* tags themselves.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -48,6 +47,5 @@ jobs:
           printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
           export SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle.key"
           version="${{ github.event.inputs.version }}"
-          [ -n "$version" ] || version="${GITHUB_REF_NAME#v}"
           scripts/release.sh "$version"
           rm -f "$RUNNER_TEMP/sparkle.key"

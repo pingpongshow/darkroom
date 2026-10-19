@@ -37,7 +37,7 @@ signs the update with Sparkle's EdDSA key, prepends an item to the appcast, and 
 
 ## CI (optional)
 
-`.github/workflows/release.yml` runs the same script on a tag push (`v*`). It needs these repository secrets in
+`.github/workflows/release.yml` runs the same script when started by hand (Actions ▸ Release ▸ Run workflow). It needs these repository secrets in
 the repo: `DEVELOPER_ID_P12` (base64 certificate export), `DEVELOPER_ID_P12_PASSWORD`,
 `DEVELOPER_ID`, `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_PASSWORD`, `SPARKLE_PRIVATE_KEY`.
 Publishing uses the workflow's own token.
