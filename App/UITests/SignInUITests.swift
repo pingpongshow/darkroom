@@ -4,26 +4,9 @@ import XCTest
 /// Uses an isolated data folder and in-memory secrets, so real accounts are never touched.
 @MainActor
 final class SignInUITests: XCTestCase {
-    struct Account: Decodable { let email: String; let password: String }
-    struct Credentials: Decodable { let admin: Account; let user: Account }
+    static var credentials: UITestSupport.Credentials? { UITestSupport.credentials }
 
-    /// Path is passed by scripts/run-ui-tests.sh via TEST_RUNNER_DARKROOM_TEST_CREDENTIALS
-    /// (a temporary copy outside protected folders, so macOS never prompts for file access).
-    static var credentials: Credentials? {
-        guard let path = ProcessInfo.processInfo.environment["DARKROOM_TEST_CREDENTIALS"] else { return nil }
-        return (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap { try? JSONDecoder().decode(Credentials.self, from: $0) }
-    }
-
-    func launch() -> XCUIApplication {
-        let app = XCUIApplication()
-        let dir = FileManager.default.temporaryDirectory.appending(path: "darkroom-ui-\(UUID().uuidString)").path
-        app.launchEnvironment["DARKROOM_DATA_DIR"] = dir
-        app.launchEnvironment["DARKROOM_SECRETS"] = "memory"
-        app.launchEnvironment["DARKROOM_DISABLE_BIOMETRICS"] = "1"
-        app.launchEnvironment["DARKROOM_DISCOVERY_CANDIDATES"] = "http://127.0.0.1:9,http://localhost:2283"
-        app.launch()
-        return app
-    }
+    func launch() -> XCUIApplication { UITestSupport.launch() }
 
     func testSignInSetPINSwitchAndUnlock() throws {
         let creds = try XCTUnwrap(Self.credentials, "Test server credentials missing")
@@ -43,7 +26,7 @@ final class SignInUITests: XCTestCase {
         app.secureTextFields["pin-confirm"].click(); app.secureTextFields["pin-confirm"].typeText("2580")
         app.buttons["pin-save"].click()
 
-        XCTAssertTrue(app.staticTexts["library-stats"].waitForExistence(timeout: 15), "Library should open")
+        XCTAssertTrue(app.descendants(matching: .any)["photo-grid"].waitForExistence(timeout: 15), "Library should open")
 
         // Switch user -> picker -> unlock with wrong then right PIN
         app.typeKey("u", modifierFlags: [.command, .shift])
@@ -57,7 +40,7 @@ final class SignInUITests: XCTestCase {
         XCTAssertTrue(wrong.waitForExistence(timeout: 5),
                       "Wrong-PIN message should appear")
         unlock.click(); unlock.typeText("2580\r")
-        XCTAssertTrue(app.staticTexts["library-stats"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any)["photo-grid"].waitForExistence(timeout: 15))
     }
 
     func testWrongPasswordShowsError() throws {

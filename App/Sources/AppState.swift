@@ -135,8 +135,11 @@ final class AppState: ObservableObject {
         idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.session != nil, self.autoLockMinutes > 0 else { return }
-                let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
-                if idle > Double(self.autoLockMinutes * 60) { self.lock() }
+                // Idle only when both the system (any input) and this app have seen no activity.
+                let anyInput = CGEventType(rawValue: ~0)!
+                let systemIdle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+                let appIdle = Date.now.timeIntervalSince(self.lastActivity)
+                if min(systemIdle, appIdle) > Double(self.autoLockMinutes * 60) { self.lock() }
             }
         }
     }
