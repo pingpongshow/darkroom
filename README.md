@@ -28,3 +28,7 @@ scripts/test-server.sh tunnel          # test server at http://localhost:2283
 Local settings and credentials live only in the Keychain or in git-ignored files
 (`Local.xcconfig`, `TestServer/.secrets/`). The pre-commit hook (`scripts/check-secrets.sh`) blocks
 personal data and secrets.
+
+## License
+
+Copyright (c) 2026 pingpongshow. All rights reserved; see [LICENSE](LICENSE). Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
