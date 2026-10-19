@@ -47,6 +47,21 @@ targets:
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "DarkRoom — a Mac client for Immich"
         NSLocalNetworkUsageDescription: DarkRoom connects to your Immich server on your local network.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.pingpongshow.darkroom.preset
+            UTTypeDescription: DarkRoom Preset
+            UTTypeConformsTo: [public.json, public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [darkroom-preset]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: DarkRoom Preset
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.pingpongshow.darkroom.preset]
+          - CFBundleTypeName: Lightroom Preset or LUT
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            CFBundleTypeExtensions: [xmp, cube, lrtemplate]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSPrincipalClass: NSApplication

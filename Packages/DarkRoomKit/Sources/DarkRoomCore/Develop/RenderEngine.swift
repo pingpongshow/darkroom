@@ -17,6 +17,15 @@ public final class RenderEngine: @unchecked Sendable {
     private let lock = NSLock()
     private var lutCache: [Int: Data] = [:]
     private var neutralCache: [String: SIMD3<Float>] = [:]
+    private var visionStore: [String: CIImage] = [:]
+
+    func visionCache(_ key: String) -> CIImage? { lock.withLock { visionStore[key] } }
+    func storeVision(_ image: CIImage, _ key: String) {
+        lock.withLock {
+            if visionStore.count > 32 { visionStore.removeAll() }
+            visionStore[key] = image
+        }
+    }
 
     public init() {
         let options: [CIContextOption: Any] = [
@@ -54,12 +63,18 @@ public final class RenderEngine: @unchecked Sendable {
             raw.isLensCorrectionEnabled = recipe.raw.lensCorrection
             raw.luminanceNoiseReductionAmount = Float(recipe.noiseLuminance / 100)
             raw.colorNoiseReductionAmount = Float(max(recipe.noiseColor, 0) / 100)
+            // Relative shifts (-100…100) work from the camera's as-shot white balance.
+            let relative = recipe.temperature != 0 && abs(recipe.temperature) <= 100
+            if relative || (recipe.tint != 0 && [.asShot, .custom].contains(recipe.whiteBalance) && recipe.temperature == 0) {
+                raw.neutralTemperature = raw.neutralTemperature * Float(1 + recipe.temperature / 100 * 0.6)
+                raw.neutralTint = raw.neutralTint + Float(recipe.tint)
+            }
             switch recipe.whiteBalance {
             case .asShot: break
             case .custom:
                 if let point = recipe.neutralPoint, let size = raw.outputImage?.extent.size {
                     raw.neutralLocation = CGPoint(x: point[0] * size.width, y: (1 - point[1]) * size.height)
-                } else if recipe.temperature != 0 {
+                } else if recipe.temperature >= 1000 {
                     raw.neutralTemperature = Float(recipe.temperature)
                     raw.neutralTint = Float(recipe.tint)
                 }
@@ -89,7 +104,10 @@ public final class RenderEngine: @unchecked Sendable {
     /// Applies the recipe. `maxPixel` limits the long edge (previews); radii scale so the look matches export.
     public func render(_ source: CIImage, recipe: EditRecipe, isRAW: Bool, maxPixel: CGFloat? = nil,
                        neutralKey: String? = nil) -> CIImage {
-        var image = applyGeometry(source, recipe.geometry)
+        let g = recipe.geometry
+        // Retouch spots and masks live in the rotated/mirrored (uncropped) space.
+        let oriented = applyRetouch(orient(source, g), spots: recipe.retouch)
+        var image = frame(oriented, g)
         var scale: CGFloat = 1
         if let maxPixel, max(image.extent.width, image.extent.height) > maxPixel {
             scale = maxPixel / max(image.extent.width, image.extent.height)
@@ -101,6 +119,12 @@ public final class RenderEngine: @unchecked Sendable {
         }
         let extent = image.extent
         let r = recipe
+        let frameScale = scale
+        let frameAndScale: (CIImage) -> CIImage = { [unowned self] mask in
+            let framed = self.frame(mask, g)
+            return frameScale < 1 ? framed.transformed(by: CGAffineTransform(scaleX: frameScale, y: frameScale)) : framed
+        }
+        if r.redEye { image = applyRedEye(image) }
 
         // White balance for non-RAW (RAW handled by the RAW engine).
         if !isRAW { image = whiteBalance(image, recipe: r, neutralKey: neutralKey) }
@@ -108,6 +132,18 @@ public final class RenderEngine: @unchecked Sendable {
         // Exposure (RAW exposure is applied in the RAW engine).
         if !isRAW, r.exposure != 0 {
             image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: r.exposure])
+        }
+
+        // LUT profile (imported .cube or built-in camera look), applied before tone like a camera profile.
+        if let id = r.lutProfile, r.lutAmount > 0, let lut = LUTLibrary.shared.lut(id) {
+            let filter = CIFilter.colorCubeWithColorSpace()
+            filter.inputImage = image
+            filter.cubeDimension = Float(lut.size)
+            filter.cubeData = lut.data
+            filter.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+            if let looked = filter.outputImage {
+                image = r.lutAmount >= 100 ? looked : dissolve(from: image, to: looked, amount: r.lutAmount / 100)
+            }
         }
 
         // Highlights (negative recovers) and shadows (positive lifts).
@@ -151,6 +187,11 @@ public final class RenderEngine: @unchecked Sendable {
             image = filter.outputImage ?? image
         }
 
+        // Local adjustments through masks.
+        if r.hasMasks {
+            image = applyMasks(image, recipe: r, oriented: oriented, scale: scale, sourceKey: neutralKey, frameAndScale: frameAndScale)
+        }
+
         // Detail (non-RAW noise reduction; RAW noise is in the RAW engine).
         if !isRAW, r.noiseLuminance > 0 {
             let filter = CIFilter.noiseReduction()
@@ -191,35 +232,7 @@ public final class RenderEngine: @unchecked Sendable {
 
     /// Rotation, mirroring, straighten (auto-cropped to the largest upright rectangle) and crop.
     public func applyGeometry(_ input: CIImage, _ g: EditRecipe.Geometry) -> CIImage {
-        var image = input
-        switch ((g.quarterTurns % 4) + 4) % 4 {
-        case 1: image = image.oriented(.right)
-        case 2: image = image.oriented(.down)
-        case 3: image = image.oriented(.left)
-        default: break
-        }
-        if g.flipHorizontal { image = image.oriented(.upMirrored) }
-        if g.flipVertical { image = image.oriented(.downMirrored) }
-        image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
-        if g.straighten != 0 {
-            let size = image.extent.size
-            let angle = g.straighten * .pi / 180
-            let rotated = image.transformed(by: CGAffineTransform(translationX: -size.width / 2, y: -size.height / 2)
-                .concatenating(CGAffineTransform(rotationAngle: -angle))
-                .concatenating(CGAffineTransform(translationX: size.width / 2, y: size.height / 2)))
-            let inner = Self.inscribedSize(size, angle: angle)
-            let rect = CGRect(x: (size.width - inner.width) / 2, y: (size.height - inner.height) / 2, width: inner.width, height: inner.height)
-            image = rotated.cropped(to: rect.integral)
-            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
-        }
-        if let crop = g.crop, crop != .full {
-            let size = image.extent.size
-            let rect = CGRect(x: crop.x * size.width, y: (1 - crop.y - crop.height) * size.height,
-                              width: crop.width * size.width, height: crop.height * size.height).integral
-            image = image.cropped(to: rect)
-            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
-        }
-        return image
+        frame(orient(input, g), g)
     }
 
     /// Largest axis-aligned rectangle with the image's aspect inside the image rotated by `angle`.

@@ -29,7 +29,6 @@ struct RewriteIntegrationTests {
         let id = try #require(TestServer.seeded["jpg"]?.last)
         let actions = AssetActions(client: client)
         let (album, deleteAlbum) = try await actions.createAlbum(name: "DarkRoom Rewrite Test", assetIDs: [id])
-        defer { Task { try? await deleteAlbum.run() } }
         let undoDescription = try await actions.setDescription([id], "Written by DarkRoom")
         let undoLocation = try await actions.setLocation([id], latitude: 35.0116, longitude: 135.7681)
         try await Task.sleep(for: .seconds(1))
@@ -55,6 +54,7 @@ struct RewriteIntegrationTests {
         try await undoDescription.run()
         try? await client.deleteAssets(body: AssetBulkDeleteDto(force: true, ids: [newID]))
         try? await client.deleteAssetMetadata(id: id, key: MetadataRewriter.supersededKey)
+        try? await deleteAlbum.run()
     }
 
     @Test func livePhotoKeepsItsMotionLinked() async throws {

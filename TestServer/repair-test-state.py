@@ -49,8 +49,17 @@ for key in [k for k in seed if k.startswith("live")]:
 # Test versions: "-edit." files (including trashed ones).
 found = req("POST", "/search/metadata", {"originalFileName": "-edit.", "withDeleted": True, "size": 200}, token)["assets"]["items"]
 ids = [a["id"] for a in found if "-edit." in a["originalFileName"]]
+# Throwaway fixtures uploaded by integration tests.
+for prefix in ("darkroom-locked-", "darkroom-it-"):
+    extra = req("POST", "/search/metadata", {"originalFileName": prefix, "withDeleted": True, "size": 100}, token)["assets"]["items"]
+    ids += [a["id"] for a in extra if a["originalFileName"].startswith(prefix)]
 if ids:
     req("DELETE", "/assets", {"ids": ids, "force": True}, token); print("deleted test versions:", len(ids))
+
+# Albums created by tests.
+for album in req("GET", "/albums", token=token) or []:
+    if album["albumName"].startswith(("DarkRoom ", "UITest")) and album["albumName"] != "Sample Album":
+        req("DELETE", f"/albums/{album['id']}", token=token); print("deleted test album", album["albumName"])
 
 # Re-stack the camera pair (JPEG primary as seeded).
 pair = seed["raw-jpeg-pair"]

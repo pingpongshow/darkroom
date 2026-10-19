@@ -45,6 +45,7 @@ struct LoupeView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("loupe")
             if let asset = library.focusedAsset, asset.stackID != nil { StackStrip(asset: asset) }
+            PresetBar()
             if library.showFilmstrip { FilmstripView().frame(height: 86) }
         }
         .task(id: library.focusedAssetID) { await loadPreview() }
@@ -312,6 +313,36 @@ struct PipelineImage: View {
             if let loaded = try? await library.pipeline.image(.init(assetID: asset.id, size: size, cacheKey: asset.cacheKey), maxPixel: maxPixel) {
                 image = loaded
             }
+        }
+    }
+}
+
+/// Favourite presets under the loupe for one-click looks (⌃1…⌃9 shown).
+struct PresetBar: View {
+    @EnvironmentObject var library: LibraryModel
+
+    var body: some View {
+        let store = library.develop.presets
+        let state = store.snapshot
+        let favorites = state.favorites.compactMap { store.preset($0) }
+        if !favorites.isEmpty, library.focusedAsset != nil {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera.filters").foregroundStyle(Theme.textTertiary)
+                    ForEach(favorites) { preset in
+                        let number = state.shortcuts.first { $0.value == preset.id }?.key
+                        Button { library.applyPreset(preset, to: library.targetIDs) } label: {
+                            Text(number.map { "\(preset.name) ⌃\($0)" } ?? preset.name)
+                                .font(.caption).padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Capsule().fill(Theme.panelRaised))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+            }
+            .background(Theme.panel)
+            .accessibilityIdentifier("preset-bar")
         }
     }
 }

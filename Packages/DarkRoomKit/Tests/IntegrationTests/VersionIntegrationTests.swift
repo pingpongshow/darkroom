@@ -46,7 +46,6 @@ struct VersionIntegrationTests {
         let id = try #require(TestServer.seeded["heic"]?.first)
         let (album, deleteAlbum) = try await AssetActions(client: client).createAlbum(name: "DarkRoom Version Test", assetIDs: [id])
         var created: [String] = []
-        defer { Task { try? await deleteAlbum.run() } }
 
         var context = try await manager.context(for: id)
         let file = try await download(client, context.original)
@@ -85,6 +84,7 @@ struct VersionIntegrationTests {
         #expect(try await client.getAssetInfo(id: id).stack == nil)
         #expect(try await client.getAssetInfo(id: second).isTrashed)
         await purge(client, created)
+        try? await deleteAlbum.run()
     }
 
     @Test func rawPairVersionAndReconciler() async throws {

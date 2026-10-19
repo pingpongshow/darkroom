@@ -139,6 +139,20 @@ struct DevelopCanvas: View {
             ZStack {
                 if develop.cropping {
                     CropEditor(develop: develop, size: geo.size)
+                } else if let preview = develop.preview, develop.tool != .none || develop.eyedropper {
+                    // Tools draw over a plain image so their gestures always receive the mouse.
+                    let scale = min(geo.size.width / CGFloat(preview.width), geo.size.height / CGFloat(preview.height), 1)
+                    Image(decorative: preview, scale: 1).resizable()
+                        .frame(width: CGFloat(preview.width) * scale, height: CGFloat(preview.height) * scale)
+                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                        .accessibilityIdentifier("develop-preview")
+                    if develop.eyedropper {
+                        EyedropperOverlay(image: preview) { develop.pickNeutral(at: $0) }
+                    } else {
+                        MaskCanvasOverlay(develop: develop, image: preview)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("mask-canvas")
+                    }
                 } else if let preview = develop.preview {
                     ZoomableImageView(image: preview, onZoomBeyondFit: {})
                         .overlay {

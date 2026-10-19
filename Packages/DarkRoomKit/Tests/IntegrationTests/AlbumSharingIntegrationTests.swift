@@ -14,7 +14,6 @@ struct AlbumSharingIntegrationTests {
         let albums = AlbumActions(client: admin)
 
         let (album, deleteAlbum) = try await AssetActions(client: admin).createAlbum(name: "DarkRoom Shared Test", assetIDs: photos)
-        defer { Task { try? await deleteAlbum.run() } }
 
         // Rename + cover with undo.
         let (renamed, undoRename) = try await albums.update(album, name: "DarkRoom Shared Test 2", coverAssetID: photos[1])

@@ -13,13 +13,17 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     // Profile (look applied on top of the RAW/colour rendering)
     public var profile: Profile = .standard
     public var profileAmount: Double = 100            // 0…200 %
+    /// A LUT profile (imported `.cube` or built-in camera look), applied first; see `LUTLibrary`.
+    public var lutProfile: String?
+    public var lutAmount: Double = 100                // 0…200 %
 
     // RAW engine
     public var raw = RawSettings()
 
     // White balance
     public var whiteBalance: WhiteBalance = .asShot
-    /// Kelvin for RAW; for other files a relative shift (-100…100) where 0 is "as shot".
+    /// -100…100: relative shift from "as shot" (any file; what presets store).
+    /// ≥ 1000: absolute Kelvin (RAW files, set with the Temp slider or a white-balance preset).
     public var temperature: Double = 0
     public var tint: Double = 0                       // -150…150
     /// Eyedropper sample (normalised x, y from top-left) for custom white balance.
@@ -74,6 +78,11 @@ public struct EditRecipe: Codable, Hashable, Sendable {
 
     // Geometry
     public var geometry = Geometry()
+
+    // Local adjustments (masks) and retouching, applied after the global adjustments.
+    public var masks: [Mask] = []
+    public var retouch: [RetouchSpot] = []
+    public var redEye = false
 
     // Named alternatives kept inside the recipe.
     public var snapshots: [Snapshot] = []
@@ -266,7 +275,7 @@ extension EditRecipe {
         func get<T: Decodable>(_ key: String, _ target: inout T) {
             if let value = try? c.decodeIfPresent(T.self, forKey: AnyKey(key)) { target = value }
         }
-        get("schema", &schema); get("profile", &profile); get("profileAmount", &profileAmount); get("raw", &raw)
+        get("schema", &schema); get("profile", &profile); get("profileAmount", &profileAmount); get("lutProfile", &lutProfile); get("lutAmount", &lutAmount); get("raw", &raw)
         get("whiteBalance", &whiteBalance); get("temperature", &temperature); get("tint", &tint); get("neutralPoint", &neutralPoint)
         get("exposure", &exposure); get("contrast", &contrast); get("highlights", &highlights); get("shadows", &shadows)
         get("whites", &whites); get("blacks", &blacks); get("texture", &texture); get("clarity", &clarity)
@@ -279,6 +288,7 @@ extension EditRecipe {
         get("vignetteMidpoint", &vignetteMidpoint); get("vignetteRoundness", &vignetteRoundness)
         get("vignetteFeather", &vignetteFeather); get("grainAmount", &grainAmount); get("grainSize", &grainSize)
         get("grainRoughness", &grainRoughness); get("geometry", &geometry); get("snapshots", &snapshots)
+        get("masks", &masks); get("retouch", &retouch); get("redEye", &redEye)
     }
 
     struct AnyKey: CodingKey {

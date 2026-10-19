@@ -24,6 +24,8 @@ struct DevelopPanels: View {
                     section("Colour Grading") { GradingPanel(develop: develop) }
                     section("Detail") { DetailPanel(develop: develop) }
                     section("Effects") { EffectsPanel(develop: develop) }
+                    section("Masks") { MasksPanel(develop: develop) }
+                    section("Retouch") { RetouchPanel(develop: develop) }
                     section("Snapshots") { SnapshotsPanel(develop: develop) }
                 }
                 .disabled(!develop.canEdit || develop.context == nil)
@@ -115,6 +117,18 @@ struct ProfilePanel: View {
         }
         .accessibilityIdentifier("develop-profile")
         DevelopSlider(develop: develop, title: "Amount", keyPath: \.profileAmount, range: 0...200, defaultValue: 100)
+        Picker("LUT", selection: Binding(get: { develop.recipe.lutProfile ?? "" },
+                                         set: { id in develop.set { $0.lutProfile = id.isEmpty ? nil : id } })) {
+            Text("None").tag("")
+            let luts = LUTLibrary.shared.all
+            ForEach(Array(Set(luts.map(\.group))).sorted(), id: \.self) { group in
+                Section(group) { ForEach(luts.filter { $0.group == group }) { Text($0.name).tag($0.id) } }
+            }
+        }
+        .accessibilityIdentifier("develop-lut")
+        if develop.recipe.lutProfile != nil {
+            DevelopSlider(develop: develop, title: "LUT amount", keyPath: \.lutAmount, range: 0...100, defaultValue: 100)
+        }
         if develop.isRAW {
             Text("RAW engine").font(.caption2).foregroundStyle(Theme.textTertiary).padding(.top, 4)
             DevelopSlider(develop: develop, title: "Boost", keyPath: \.raw.boost, range: 0...1, step: 0.01, format: "%.2f", defaultValue: 1)
@@ -148,8 +162,20 @@ struct WhiteBalancePanel: View {
             Button { develop.eyedropper.toggle() } label: { Image(systemName: "eyedropper") }.help("White balance selector (W)")
         }
         if develop.isRAW {
-            DevelopSlider(develop: develop, title: "Temp (K)", keyPath: \.temperature, range: 2000...50000, step: 50,
-                          defaultValue: 0, track: [.blue, .white, .yellow])
+            // Shows Kelvin; relative shifts (from presets) are converted from the as-shot value.
+            let asShot = develop.rawNeutral?.kelvin ?? 5500
+            let kelvin = develop.recipe.temperature >= 1000 ? develop.recipe.temperature
+                : asShot * (1 + develop.recipe.temperature / 100 * 0.6)
+            HStack {
+                Text("Temp (K)").foregroundStyle(Theme.textSecondary)
+                    .onTapGesture(count: 2) { develop.set { $0.temperature = 0; $0.whiteBalance = .asShot } }
+                Spacer()
+                Text("\(Int(kelvin))").monospacedDigit()
+            }
+            Slider(value: Binding(get: { kelvin }, set: { v in develop.recipe.temperature = v; develop.recipe.whiteBalance = .custom }),
+                   in: 2000...20000, step: 50, onEditingChanged: { if !$0 { develop.commit() } })
+                .controlSize(.mini)
+                .accessibilityIdentifier("slider-Temp")
             DevelopSlider(develop: develop, title: "Tint", keyPath: \.tint, range: -150...150, track: [.green, .white, .pink])
         } else {
             DevelopSlider(develop: develop, title: "Temp", keyPath: \.temperature, track: [.blue, .white, .yellow])

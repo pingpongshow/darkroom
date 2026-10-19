@@ -28,6 +28,15 @@ final class DevelopModel: ObservableObject {
     @Published private(set) var rawNeutral: (kelvin: Double, tint: Double)?
     @Published private(set) var isRAW = false
     @Published private(set) var canEdit = true
+    /// Preset being hovered in the Presets panel (previewed live, not applied).
+    @Published var hoverPreset: Preset? { didSet { if hoverPreset != oldValue { scheduleRender() } } }
+    /// The last applied preset and the recipe before it, for the Amount slider.
+    @Published private(set) var appliedPreset: Preset?
+    @Published var presetAmount: Double = 100
+    private var recipeBeforePreset = EditRecipe()
+    /// A camera/lens default preset suggested for this photo.
+    @Published private(set) var suggestedDefault: Preset?
+    let presets: PresetStore
 
     /// Size the preview is rendered at (long edge, pixels); set from the view's size.
     var previewPixels: CGFloat = 1600 { didSet { if abs(previewPixels - oldValue) > 64 { scheduleRender() } } }
@@ -47,6 +56,10 @@ final class DevelopModel: ObservableObject {
             .appending(path: "DarkRoom/\(library.session.account.id.uuidString)/versions.json")
         versions = VersionManager(client: library.client, registry: VersionRegistry(file: registryFile))
         originals = OriginalCache(client: library.client, accountID: library.session.account.id)
+        let userDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "DarkRoom/\(library.session.account.id.uuidString)")
+        presets = PresetStore(file: userDir.appending(path: "presets.json"))
+        LUTLibrary.shared.load(directory: userDir.appending(path: "luts"))
     }
 
     // MARK: Opening
@@ -56,6 +69,7 @@ final class DevelopModel: ObservableObject {
         if dirty { await save() }
         self.assetID = assetID
         context = nil; preview = nil; base = nil; originalFile = nil; error = nil; histogram = nil
+        appliedPreset = nil; hoverPreset = nil; suggestedDefault = nil
         undoStack = []; redoStack = []
         isLoading = true
         defer { isLoading = false }
@@ -74,6 +88,11 @@ final class DevelopModel: ObservableObject {
             committed = context.recipe
             recipe = context.recipe
             dirty = false
+            // Camera / lens default: suggested, or applied automatically if the user chose that.
+            if context.recipe.isIdentity, canEdit, let exif = context.original.exifInfo,
+               let preset = presets.cameraDefault(make: exif.make, model: exif.model, lens: exif.lensModel) {
+                if presets.snapshot.autoApplyCameraDefaults { apply(preset) } else { suggestedDefault = preset }
+            }
             scheduleRender()
         } catch {
             self.error = "Couldn’t open for editing: \(error.localizedDescription)"
@@ -87,7 +106,7 @@ final class DevelopModel: ObservableObject {
         guard let file = originalFile else { return }
         renderGeneration += 1
         let generation = renderGeneration
-        var recipe = showBefore ? EditRecipe() : recipe
+        var recipe = showBefore ? EditRecipe() : (hoverPreset.map { $0.apply(to: self.recipe) } ?? self.recipe)
         if cropping { recipe.geometry.crop = nil; recipe.geometry.straighten = showBefore ? 0 : recipe.geometry.straighten }
         let maxPixel = previewPixels
         let isRAW = self.isRAW
@@ -114,6 +133,7 @@ final class DevelopModel: ObservableObject {
             case .success(let (cg, histogram)):
                 self.preview = cg
                 self.histogram = histogram
+                if self.tool == .mask { self.renderMaskOverlay() }
             case .failure(let error):
                 self.error = "Couldn’t render: \(error.localizedDescription)"
             }
@@ -163,6 +183,160 @@ final class DevelopModel: ObservableObject {
                 r.snapshots = snapshots
             }
         }
+    }
+
+    // MARK: Presets
+
+    func apply(_ preset: Preset) {
+        recipeBeforePreset = recipe
+        appliedPreset = preset
+        presetAmount = 100
+        hoverPreset = nil
+        suggestedDefault = nil
+        set { $0 = preset.apply(to: $0) }
+        presets.noteUsed(preset.id)
+    }
+
+    /// Re-applies the last preset at a new strength (0…200 %).
+    func setPresetAmount(_ amount: Double, commit: Bool) {
+        guard let preset = appliedPreset else { return }
+        presetAmount = amount
+        recipe = preset.apply(to: recipeBeforePreset, amount: amount / 100)
+        if commit { self.commit() }
+    }
+
+    func saveAsPreset(name: String, folder: String, groups: Set<RecipeGroup>) {
+        let preset = Preset(name: name, folder: folder, groups: groups, recipe: recipe)
+        presets.save(preset)
+        library.flash("Saved preset “\(name)”")
+        objectWillChange.send()
+    }
+
+    // MARK: Masks and retouch
+
+    enum Tool: Equatable { case none, mask, spot }
+    @Published var tool: Tool = .none
+    @Published var selectedMaskID: UUID?
+    @Published var showMaskOverlay = true { didSet { renderMaskOverlay() } }
+    @Published private(set) var maskOverlay: CGImage?
+    @Published var brushSize: Double = 0.06
+    @Published var brushFeather: Double = 50
+    @Published var brushFlow: Double = 100
+    @Published var spotMode: RetouchSpot.Mode = .heal
+    @Published var spotSize: Double = 0.025
+    @Published var selectedSpotID: UUID?
+    private var overlayTask: Task<Void, Never>?
+
+    var selectedMask: Mask? { recipe.masks.first { $0.id == selectedMaskID } }
+
+    func addMask(_ kind: MaskKind) {
+        let mask = Mask(name: kind.title, components: [MaskComponent(kind)])
+        set { $0.masks.append(mask) }
+        selectedMaskID = mask.id
+        tool = .mask
+        renderMaskOverlay()
+    }
+
+    func addComponent(_ kind: MaskKind, operation: MaskComponent.Operation) {
+        guard let id = selectedMaskID else { return }
+        set { r in
+            guard let i = r.masks.firstIndex(where: { $0.id == id }) else { return }
+            r.masks[i].components.append(MaskComponent(kind, operation: operation))
+        }
+        renderMaskOverlay()
+    }
+
+    func updateMask(commit: Bool = false, _ change: (inout Mask) -> Void) {
+        guard let id = selectedMaskID, let i = recipe.masks.firstIndex(where: { $0.id == id }) else { return }
+        var r = recipe
+        change(&r.masks[i])
+        recipe = r
+        if commit { self.commit() }
+        renderMaskOverlay()
+    }
+
+    func deleteSelectedMask() {
+        guard let id = selectedMaskID else { return }
+        set { $0.masks.removeAll { $0.id == id } }
+        selectedMaskID = recipe.masks.last?.id
+        renderMaskOverlay()
+    }
+
+    /// Red overlay of the selected mask on the preview.
+    func renderMaskOverlay() {
+        overlayTask?.cancel()
+        guard showMaskOverlay, tool == .mask, let mask = selectedMask, let file = originalFile, let preview else { maskOverlay = nil; return }
+        let recipe = self.recipe, isRAW = self.isRAW, engine = self.engine
+        let size = CGSize(width: preview.width, height: preview.height)
+        overlayTask = Task {
+            let image: CGImage? = await Task.detached(priority: .userInitiated) {
+                guard let base = try? engine.base(file, recipe: recipe, draft: true, scaleFactor: isRAW ? 0.25 : 1) else { return nil }
+                let oriented = engine.orient(base, recipe.geometry)
+                var m = engine.frame(engine.maskImage(mask, oriented: oriented, sourceKey: file.path), recipe.geometry)
+                m = m.transformed(by: CGAffineTransform(scaleX: size.width / m.extent.width, y: size.height / m.extent.height))
+                let red = CIImage(color: CIColor(red: 1, green: 0.15, blue: 0.1, alpha: 0.5)).cropped(to: m.extent)
+                let overlay = red.applyingFilter("CIBlendWithMask", parameters: [
+                    kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: m.extent), kCIInputMaskImageKey: m])
+                return engine.context.createCGImage(overlay, from: m.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            }.value
+            guard !Task.isCancelled else { return }
+            maskOverlay = image
+        }
+    }
+
+    /// Point on the (straightened, cropped) preview → normalised point in mask/retouch space.
+    func toMaskSpace(_ p: CGPoint) -> [Double] {
+        Self.framedToOriented(p, geometry: recipe.geometry, orientedSize: orientedSize)
+    }
+
+    /// Mask-space point → point on the preview (for drawing handles).
+    func fromMaskSpace(_ p: [Double]) -> CGPoint {
+        Self.orientedToFramed(p, geometry: recipe.geometry, orientedSize: orientedSize)
+    }
+
+    /// The photo's size after rotation/mirroring (aspect is what matters for mapping).
+    var orientedSize: CGSize {
+        let w = Double(context?.original.width ?? 3), h = Double(context?.original.height ?? 2)
+        return ((recipe.geometry.quarterTurns % 2) == 1) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+    }
+
+    static func framedToOriented(_ p: CGPoint, geometry g: EditRecipe.Geometry, orientedSize s: CGSize) -> [Double] {
+        var u = Double(p.x), v = Double(p.y)
+        if let c = g.crop { u = c.x + u * c.width; v = c.y + v * c.height }
+        guard g.straighten != 0 else { return [u, v] }
+        let a: Double = g.straighten * .pi / 180
+        let inner = RenderEngine.inscribedSize(s, angle: a)
+        let iw = Double(inner.width), ih = Double(inner.height), w = Double(s.width), h = Double(s.height)
+        let dx = (u - 0.5) * iw, dy = (v - 0.5) * ih
+        let ox = dx * Foundation.cos(a) + dy * Foundation.sin(a), oy = -dx * Foundation.sin(a) + dy * Foundation.cos(a)
+        return [0.5 + ox / w, 0.5 + oy / h]
+    }
+
+    static func orientedToFramed(_ p: [Double], geometry g: EditRecipe.Geometry, orientedSize s: CGSize) -> CGPoint {
+        var u = p[0], v = p[1]
+        if g.straighten != 0 {
+            let a: Double = g.straighten * .pi / 180
+            let inner = RenderEngine.inscribedSize(s, angle: a)
+            let ox = (u - 0.5) * Double(s.width), oy = (v - 0.5) * Double(s.height)
+            let dx = ox * Foundation.cos(a) - oy * Foundation.sin(a), dy = ox * Foundation.sin(a) + oy * Foundation.cos(a)
+            u = 0.5 + dx / Double(inner.width); v = 0.5 + dy / Double(inner.height)
+        }
+        if let c = g.crop { u = (u - c.x) / c.width; v = (v - c.y) / c.height }
+        return CGPoint(x: u, y: v)
+    }
+
+    // Retouch
+
+    func addSpot(at p: CGPoint) {
+        let spot = RetouchSpot(mode: spotMode, center: toMaskSpace(p), radius: spotSize)
+        set { $0.retouch.append(spot) }
+        selectedSpotID = spot.id
+    }
+
+    func deleteSelectedSpot() {
+        guard let id = selectedSpotID else { return }
+        set { $0.retouch.removeAll { $0.id == id } }
+        selectedSpotID = nil
     }
 
     // MARK: Copy / paste / sync
@@ -329,35 +503,4 @@ final class DevelopModel: ObservableObject {
     }
 }
 
-/// Develop panels (for reset, copy/paste and sync).
-enum DevelopPanel: String, CaseIterable, Identifiable {
-    case profile = "Profile & RAW", whiteBalance = "White Balance", tone = "Tone", presence = "Presence"
-    case curve = "Tone Curve", mixer = "Colour Mixer", grading = "Colour Grading", detail = "Detail", effects = "Effects"
-    case geometry = "Crop & Geometry"
-    var id: String { rawValue }
-
-    func copy(from source: EditRecipe, to r: inout EditRecipe) {
-        switch self {
-        case .profile: r.profile = source.profile; r.profileAmount = source.profileAmount; r.raw = source.raw
-        case .whiteBalance: r.whiteBalance = source.whiteBalance; r.temperature = source.temperature; r.tint = source.tint
-            r.neutralPoint = source.neutralPoint
-        case .tone: r.exposure = source.exposure; r.contrast = source.contrast; r.highlights = source.highlights
-            r.shadows = source.shadows; r.whites = source.whites; r.blacks = source.blacks
-        case .presence: r.texture = source.texture; r.clarity = source.clarity; r.dehaze = source.dehaze
-            r.vibrance = source.vibrance; r.saturation = source.saturation
-        case .curve: r.parametric = source.parametric; r.curveRGB = source.curveRGB; r.curveRed = source.curveRed
-            r.curveGreen = source.curveGreen; r.curveBlue = source.curveBlue
-        case .mixer: r.hsl = source.hsl; r.monochrome = source.monochrome; r.bwMix = source.bwMix
-        case .grading: r.grading = source.grading
-        case .detail: r.sharpenAmount = source.sharpenAmount; r.sharpenRadius = source.sharpenRadius
-            r.sharpenDetail = source.sharpenDetail; r.sharpenMasking = source.sharpenMasking
-            r.noiseLuminance = source.noiseLuminance; r.noiseColor = source.noiseColor
-        case .effects: r.vignetteAmount = source.vignetteAmount; r.vignetteMidpoint = source.vignetteMidpoint
-            r.vignetteRoundness = source.vignetteRoundness; r.vignetteFeather = source.vignetteFeather
-            r.grainAmount = source.grainAmount; r.grainSize = source.grainSize; r.grainRoughness = source.grainRoughness
-        case .geometry: r.geometry = source.geometry
-        }
-    }
-
-    func reset(_ r: inout EditRecipe) { copy(from: EditRecipe(), to: &r) }
-}
+typealias DevelopPanel = RecipeGroup

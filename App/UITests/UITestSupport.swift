@@ -46,7 +46,10 @@ enum UITestSupport {
         if item.exists && !visible() {
             let list = app.scrollViews.firstMatch
             let down = item.frame.midY > window.frame.midY
-            for _ in 0..<8 where !visible() { list.scroll(byDeltaX: 0, deltaY: down ? -120 : 120) }
+            for _ in 0..<8 where !visible() {
+                list.scroll(byDeltaX: 0, deltaY: down ? -120 : 120)
+                usleep(400_000) // let scroll momentum settle before the next check / click
+            }
         }
         return item
     }

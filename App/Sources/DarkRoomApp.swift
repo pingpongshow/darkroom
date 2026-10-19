@@ -37,7 +37,16 @@ struct DarkRoomApp: App {
     }
 }
 
+extension Notification.Name {
+    /// Preset / profile files opened from Finder (double-click or Dock drop).
+    static let openPresetFiles = Notification.Name("DarkRoom.openPresetFiles")
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        NotificationCenter.default.post(name: .openPresetFiles, object: urls)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
     }

@@ -45,7 +45,11 @@ struct LibraryShell: View {
             Divider().overlay(Theme.separator)
             HStack(spacing: 0) {
                 if library.showLeftPanel {
-                    SidebarView().frame(width: 220)
+                    if library.mode == .develop {
+                        PresetsPanel(develop: library.develop).frame(width: 220)
+                    } else {
+                        SidebarView().frame(width: 220)
+                    }
                     Divider().overlay(Theme.separator)
                 }
                 content
@@ -89,6 +93,19 @@ struct LibraryShell: View {
                 trashCount = count
                 confirmEmptyTrash = true
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openPresetFiles)) { note in
+            if let urls = note.object as? [URL] { library.importPresetFiles(urls) }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            let presetExtensions: Set<String> = ["darkroom-preset", "xmp", "cube", "lrtemplate"]
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, presetExtensions.contains(url.pathExtension.lowercased()) else { return }
+                    Task { @MainActor in library.importPresetFiles([url]) }
+                }
+            }
+            return true
         }
         .onAppear { library.undoManager = undoManager }
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
@@ -155,6 +172,7 @@ struct LibraryShell: View {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if library.mode == .develop, handleDevelop(event, mods: mods, key: key) { return true }
         if mods.contains(.command), event.keyCode == 36 { library.startSlideshow(); return true } // ⌘↩
+        if mods == .control, let n = Int(key), (1...9).contains(n) { library.applyPresetShortcut(n); return true } // ⌃1…⌃9
         if mods.contains(.command) {
             switch key {
             case "=", "+": zoom(1.25); return true
@@ -221,10 +239,26 @@ struct LibraryShell: View {
         }
         guard mods.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
         if event.keyCode == 53 { // Esc
-            if develop.cropping { develop.cropping = false } else if develop.eyedropper { develop.eyedropper = false } else { library.mode = .loupe }
+            if develop.cropping { develop.cropping = false }
+            else if develop.eyedropper { develop.eyedropper = false }
+            else if develop.tool != .none { develop.tool = .none }
+            else { library.mode = .loupe }
+            return true
+        }
+        if event.keyCode == 51 || event.keyCode == 117 { // Delete
+            if develop.tool == .spot, develop.selectedSpotID != nil { develop.deleteSelectedSpot(); return true }
+            if develop.tool == .mask, develop.selectedMaskID != nil { develop.deleteSelectedMask(); return true }
+            return true
+        }
+        if key == "m" {
+            if mods.contains(.shift) { develop.addMask(.radial(center: [0.5, 0.5], radius: [0.25, 0.25], angle: 0, feather: 50, inside: true)) }
+            else { develop.addMask(.linear(start: [0.5, 0.15], end: [0.5, 0.55])) }
             return true
         }
         switch key {
+        case "k": develop.addMask(.brush(strokes: [])); return true
+        case "q": develop.tool = develop.tool == .spot ? .none : .spot; return true
+        case "o": develop.showMaskOverlay.toggle(); return true
         case "r": develop.cropping.toggle(); return true
         case "w": develop.eyedropper.toggle(); return true
         case "v": develop.set { $0.monochrome.toggle() }; return true

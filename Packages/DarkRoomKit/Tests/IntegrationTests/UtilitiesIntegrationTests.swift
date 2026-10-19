@@ -11,6 +11,7 @@ struct UtilitiesIntegrationTests {
         let recent = try await LibraryUtilities.recentlyAdded(client, days: 3650)
         #expect(!recent.isEmpty)
         let large = try await LibraryUtilities.largeFiles(client, limit: 10)
+        #expect(large.allSatisfy { $0.visibility == .timeline }, "No hidden motion clips or superseded files")
         let sizes = large.compactMap { $0.exifInfo?.fileSizeInByte }
         #expect(sizes == sizes.sorted(by: >))
         let paths = try await client.getUniqueOriginalPaths()
@@ -39,7 +40,6 @@ struct UtilitiesIntegrationTests {
         try TinyPNG.random().write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let target = try await client.upload(file: file, options: .init(fileCreatedAt: .now, fileModifiedAt: .now)).id
-        defer { Task { try? await client.deleteAssets(body: AssetBulkDeleteDto(force: true, ids: [target])) } }
         let undo = try await AssetActions(client: client).setVisibility([target], .locked)
         let store = await TimelineStore(client: client, query: TimelineQuery(visibility: .locked, withStacked: false))
         await store.reload()
@@ -49,5 +49,7 @@ struct UtilitiesIntegrationTests {
         #expect(try await client.getAssetInfo(id: target).visibility == .timeline)
         try await LibraryUtilities.lockLockedFolder(client)
         #expect(try await LibraryUtilities.lockedState(client) == .locked)
+        // Remove the throwaway fixture (awaited, so it can't outlive the test process).
+        try await client.deleteAssets(body: AssetBulkDeleteDto(force: true, ids: [target]))
     }
 }
