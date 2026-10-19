@@ -94,7 +94,7 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: YES
         GENERATE_INFOPLIST_FILE: NO
         # Sparkle EdDSA public key (docs/Releasing.md). Empty disables update checks.
-        SPARKLE_PUBLIC_KEY: ""
+        SPARKLE_PUBLIC_KEY: "uqE1BWQAq70lEDTD/3leo2DS23EwLtKXhjBjj3pDdOA="
 
   DarkRoomUITests:
     type: bundle.ui-testing
