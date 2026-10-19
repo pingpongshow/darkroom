@@ -50,6 +50,16 @@ final class DevelopModel: ObservableObject {
     private var committed = EditRecipe()
     /// The recipe as last saved to Immich (the original's when never edited). Reset and Cancel return here.
     @Published private(set) var savedRecipe = EditRecipe()
+    private var drafts = EditDrafts(file: nil)
+
+    /// Keeps unsaved changes on this Mac (when the editor is closed in a way that can't ask, e.g. auto-lock).
+    func stashDraft() {
+        guard hasChanges, let context else { return }
+        drafts.put(recipe, for: context.version?.id ?? context.original.id)
+        dirty = false
+        savedRecipe = recipe   // so nothing else treats it as unsaved after stashing
+    }
+
     /// Unsaved changes since the photo was opened or last saved.
     var hasChanges: Bool { canEdit && recipe != savedRecipe }
     static var clipboard: (recipe: EditRecipe, panels: Set<DevelopPanel>)?
@@ -63,6 +73,7 @@ final class DevelopModel: ObservableObject {
         let userDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "DarkRoom/\(library.session.account.id.uuidString)")
         presets = PresetStore(file: userDir.appending(path: "presets.json"))
+        drafts = EditDrafts(file: userDir.appending(path: "edit-drafts.json"))
         LUTLibrary.shared.load(directory: userDir.appending(path: "luts"))
     }
 
@@ -70,7 +81,7 @@ final class DevelopModel: ObservableObject {
 
     func open(_ assetID: String) async {
         guard assetID != self.assetID else { return }
-        if dirty { await save() }
+        stashDraft()   // never saved silently; kept as a draft if anything bypassed the prompt
         self.assetID = assetID
         context = nil; preview = nil; base = nil; originalFile = nil; error = nil; histogram = nil
         appliedPreset = nil; hoverPreset = nil; suggestedDefault = nil
@@ -94,6 +105,10 @@ final class DevelopModel: ObservableObject {
             savedRecipe = context.recipe
             recipe = context.recipe
             dirty = false
+            if canEdit, let draft = drafts.take(context.version?.id ?? context.original.id), draft != context.recipe {
+                recipe = draft
+                status = "Restored unsaved changes from your last session. Save to keep them, or Cancel."
+            }
             if let version = context.version, let editor = try? await versions.record(of: version.id)?.editor {
                 status = "Edited in \(editor). Develop edits start from the original and replace that version."
             }
@@ -556,3 +571,31 @@ final class DevelopModel: ObservableObject {
 }
 
 typealias DevelopPanel = RecipeGroup
+
+/// Unsaved editor changes kept on this Mac per photo (never uploaded until you Save).
+struct EditDrafts {
+    let file: URL?
+    private var items: [String: EditRecipe] = [:]
+
+    init(file: URL?) {
+        self.file = file
+        if let file, let data = try? Data(contentsOf: file) {
+            items = (try? JSONDecoder().decode([String: EditRecipe].self, from: data)) ?? [:]
+        }
+    }
+
+    mutating func put(_ recipe: EditRecipe, for id: String) { items[id] = recipe; write() }
+
+    /// Returns and forgets the draft for a photo.
+    mutating func take(_ id: String) -> EditRecipe? {
+        guard let recipe = items.removeValue(forKey: id) else { return nil }
+        write()
+        return recipe
+    }
+
+    private func write() {
+        guard let file else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(items).write(to: file, options: .atomic)
+    }
+}

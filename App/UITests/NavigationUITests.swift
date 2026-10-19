@@ -47,6 +47,27 @@ final class NavigationUITests: XCTestCase {
         any(app, "edit-photo").click()
         XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
         XCTAssertFalse(any(app, "develop-unsaved").exists, "Reopening shows no leftover changes")
+
+        // Any way out of the editor with unsaved changes asks first, e.g. the toolbar's view switcher.
+        app.sliders["slider-Exposure"].adjust(toNormalizedSliderPosition: 0.62)
+        XCTAssertTrue(any(app, "develop-unsaved").waitForExistence(timeout: 5))
+        any(app, "mode-picker").radioButtons.element(boundBy: 0).click()
+        let keep = app.sheets.buttons["Keep Editing"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5), "Switching views asks about unsaved edits")
+        UITestSupport.screenshot("fb-3-unsaved-prompt", in: self)
+        keep.click()
+        XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 5), "Keep Editing stays in the editor")
+        XCTAssertTrue(any(app, "develop-unsaved").exists)
+        // The G key asks too; Don't Save discards and continues.
+        app.typeKey("g", modifierFlags: [])
+        let dontSave = app.sheets.buttons["Don’t Save"]
+        XCTAssertTrue(dontSave.waitForExistence(timeout: 5))
+        dontSave.click()
+        XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 10), "Don't Save continues to the grid")
+        returned.click()
+        any(app, "edit-photo").click()
+        XCTAssertTrue(any(app, "develop-crop").waitForExistence(timeout: 15))
+        XCTAssertFalse(any(app, "develop-unsaved").exists, "Nothing was saved or kept")
         any(app, "back-to-grid").click()
         XCTAssertTrue(any(app, "loupe").waitForExistence(timeout: 10), "Back from Develop shows the photo")
         // Side arrows move between photos.

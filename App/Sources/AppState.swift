@@ -50,8 +50,12 @@ final class AppState: ObservableObject {
         return AccountManager(store: store, secrets: secrets)
     }
 
+    /// The running app's state (for the app delegate).
+    static weak var current: AppState?
+
     init(accounts: AccountManager = AppState.makeAccountManager()) {
         self.accounts = accounts
+        defer { AppState.current = self }
         phase = accounts.accounts.isEmpty ? .signIn(prefillAccount: nil) : .picker
         applyAppearance()
         observeLocking()
@@ -121,8 +125,23 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Lock / Switch User from the menu: asks about unsaved editor changes first.
+    func requestLock() {
+        guard let library = activeLibrary else { lock(); return }
+        library.confirmLeavingEditor { [weak self] in self?.lock() }
+    }
+
+    func requestSignOut() {
+        let signOut = { [weak self] in Task { await self?.signOutCurrent() }; return () }
+        guard let library = activeLibrary else { signOut(); return }
+        library.confirmLeavingEditor { signOut() }
+    }
+
     /// Returns to the user picker (keeps the session token so the PIN unlocks instantly).
+    /// Automatic locks (idle, sleep) can't ask, so unsaved editor changes are kept as a draft on this Mac
+    /// and offered again the next time that photo is opened in the editor.
     func lock() {
+        activeLibrary?.developModel?.stashDraft()
         IntentAccount.activeClient = nil
         activeLibrary = nil
         session = nil

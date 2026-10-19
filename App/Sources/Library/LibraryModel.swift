@@ -113,28 +113,56 @@ final class LibraryModel: ObservableObject {
     let pipeline: ImagePipeline
     @Published var destination: LibraryDestination = .photos {
         willSet { if !navigatingBack, newValue != destination { history.append(destination) } }
-        didSet { destinationChanged() }
+        didSet {
+            if blockedByUnsavedEdits(inEditor: mode == .develop, revert: {
+                if !self.navigatingBack, !self.history.isEmpty { self.history.removeLast() }
+                self.destination = oldValue
+            }, retry: { [destination] in self.destination = destination }) { return }
+            destinationChanged()
+        }
     }
     @Published var timeline: TimelineStore
     @Published var mode: ViewMode = .grid {
         didSet {
-            // Paths that can't ask (e.g. picking another sidebar item) keep unsaved edits by saving them.
-            // Back, Esc, the arrows and the mode keys ask first (see leaveDevelop).
-            if oldValue == .develop, mode != .develop, let develop = developModel, develop.hasChanges { Task { await develop.save() } }
+            // Leaving the editor with unsaved changes always asks (Save / Don't Save / Keep Editing).
+            if oldValue == .develop, mode != .develop {
+                _ = blockedByUnsavedEdits(inEditor: true, revert: { self.mode = .develop }, retry: { [mode] in self.mode = mode })
+            }
         }
     }
+    /// Re-entrancy guard while a blocked change is being undone or retried.
+    private var guardingEdits = false
+
+    /// When the editor has unsaved changes, undoes a navigation that just happened and asks first; the change is
+    /// re-applied after Save or Don't Save. Returns true when the change was blocked.
+    private func blockedByUnsavedEdits(inEditor: Bool, revert: @escaping () -> Void, retry: @escaping @MainActor () -> Void) -> Bool {
+        guard !guardingEdits, inEditor, let develop = developModel, develop.hasChanges else { return false }
+        guardingEdits = true
+        revert()
+        guardingEdits = false
+        if pendingDevelopLeave == nil { pendingDevelopLeave = PendingLeave(action: retry) }
+        return true
+    }
+
     /// Shown when leaving the editor with unsaved changes: Save, Don't Save or keep editing.
     @Published var pendingDevelopLeave: PendingLeave?
 
     struct PendingLeave: Identifiable {
         let id = UUID()
         let action: @MainActor () -> Void
+        var onCancel: (@MainActor () -> Void)? = nil
+    }
+
+    /// For leaving that isn't a navigation (lock, switch user, sign out, quit): ask first when there are unsaved edits.
+    func confirmLeavingEditor(then action: @escaping @MainActor () -> Void, onCancel: (@MainActor () -> Void)? = nil) {
+        guard let develop = developModel, develop.hasChanges else { action(); return }
+        pendingDevelopLeave = PendingLeave(action: action, onCancel: onCancel)
     }
 
     /// Runs `action` after the editor's unsaved changes are saved or discarded (asking first), or right away.
     func leaveDevelop(then action: @escaping @MainActor () -> Void) {
         guard mode == .develop, let develop = developModel, develop.hasChanges else { action(); return }
-        pendingDevelopLeave = PendingLeave(action: action)
+        if pendingDevelopLeave == nil { pendingDevelopLeave = PendingLeave(action: action) }
     }
 
     /// Editor Save: save to Immich, then back to the photo.
@@ -159,7 +187,7 @@ final class LibraryModel: ObservableObject {
         developModel = model
         return model
     }
-    private var developModel: DevelopModel?
+    private(set) var developModel: DevelopModel?
     /// Writes metadata changes into the files (original + Mac version).
     lazy var rewrites = FileRewriteQueue(library: self)
     /// "Edit in…" companion-app sessions.
@@ -167,7 +195,14 @@ final class LibraryModel: ObservableObject {
     /// Import (file picker, drops, cards, watched folders).
     lazy var importer = ImportModel(library: self)
     @Published var selection: Set<String> = []
-    @Published var focusedAssetID: String?
+    @Published var focusedAssetID: String? {
+        didSet {
+            // Another photo picked while editing (filmstrip, arrows…): ask about unsaved changes first.
+            if oldValue != focusedAssetID, mode == .develop {
+                _ = blockedByUnsavedEdits(inEditor: true, revert: { self.focusedAssetID = oldValue }, retry: { [focusedAssetID] in self.focusedAssetID = focusedAssetID })
+            }
+        }
+    }
     @Published var showLeftPanel = true
     @Published var showRightPanel = true
     @Published var showFilmstrip = true
@@ -176,6 +211,8 @@ final class LibraryModel: ObservableObject {
     /// Where the loupe is drawn (window coordinates, top-left origin).
     var loupeFrame: CGRect = .zero
     var pendingLivePlay: String?
+    /// Sideways swipe tracking over videos in the loupe.
+    var videoSwipe = SwipeGesture()
     @AppStorage("gridCellSize", store: .darkRoom) var gridCellSize: Double = 180
     @Published var scrollRequest: String?
     /// Grid scroll position (per timeline store), restored when coming back from the loupe or Develop.

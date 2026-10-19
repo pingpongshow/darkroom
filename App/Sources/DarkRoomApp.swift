@@ -20,10 +20,10 @@ struct DarkRoomApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Lock DarkRoom") { state.lock() }
+                Button("Lock DarkRoom") { state.requestLock() }
                     .keyboardShortcut("l", modifiers: [.command, .control])
                     .disabled(state.session == nil)
-                Button("Switch User…") { state.lock() }
+                Button("Switch User…") { state.requestLock() }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                     .disabled(state.session == nil)
             }
@@ -70,6 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Quitting with unsaved edits in the editor asks first (Save / Don't Save / Keep Editing).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let library = AppState.current?.activeLibrary, library.developModel?.hasChanges == true else { return .terminateNow }
+        library.confirmLeavingEditor(then: { NSApp.reply(toApplicationShouldTerminate: true) },
+                                     onCancel: { NSApp.reply(toApplicationShouldTerminate: false) })
+        return .terminateLater
+    }
 }
 
 /// Switches between the account screens and the library.

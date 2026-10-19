@@ -137,8 +137,7 @@ final class ZoomScrollView: NSScrollView {
     var onClick: (() -> Void)?
     private var pendingClick: DispatchWorkItem?
     private var mouseDownPoint: NSPoint?
-    private var swipeDistance: CGFloat = 0
-    private var swipeFired = false
+    private var swipe = SwipeGesture()
     private var requestedFull = false
     private var needsFit = false
 
@@ -203,18 +202,8 @@ final class ZoomScrollView: NSScrollView {
 
     override func scrollWheel(with event: NSEvent) {
         let atFit = magnification <= fitMagnification(for: naturalSize) * 1.01
-        let trackpad = event.hasPreciseScrollingDeltas && (event.phase != [] || event.momentumPhase != [])
-        guard atFit, trackpad else { return super.scrollWheel(with: event) }
-        if event.momentumPhase != [] { return }   // ignore the glide after the fingers lift
-        if event.phase.contains(.began) { swipeDistance = 0; swipeFired = false }
-        if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) { swipeDistance += event.scrollingDeltaX }
-        if !swipeFired, abs(swipeDistance) > 50 {
-            swipeFired = true
-            // Natural scrolling: fingers moving left give negative deltas, like turning a page forward.
-            let direction = swipeDistance < 0 ? 1 : -1
-            onSwipe?(event.isDirectionInvertedFromDevice ? direction : -direction)
-        }
-        if event.phase.contains(.ended) || event.phase.contains(.cancelled) { swipeDistance = 0 }
+        guard atFit, SwipeGesture.isTrackpadGesture(event) else { return super.scrollWheel(with: event) }
+        if let direction = swipe.handle(event) { onSwipe?(direction) }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -435,4 +424,30 @@ struct StepArrows: View {
         .help(help)
         .accessibilityIdentifier(id)
     }
+}
+
+/// Two-finger horizontal trackpad swipe → +1 (next) / -1 (previous), once per gesture.
+struct SwipeGesture {
+    private var distance: CGFloat = 0
+    private var fired = false
+
+    static func isTrackpadGesture(_ event: NSEvent) -> Bool {
+        event.hasPreciseScrollingDeltas && (event.phase != [] || event.momentumPhase != [])
+    }
+
+    /// Feeds one scroll event; returns a direction when the swipe is long enough.
+    mutating func handle(_ event: NSEvent) -> Int? {
+        if event.momentumPhase != [] { return nil }   // ignore the glide after the fingers lift
+        if event.phase.contains(.began) { distance = 0; fired = false }
+        if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) { distance += event.scrollingDeltaX }
+        defer { if event.phase.contains(.ended) || event.phase.contains(.cancelled) { distance = 0 } }
+        guard !fired, abs(distance) > 50 else { return nil }
+        fired = true
+        // Fingers moving left mean "next", whichever scrolling direction is set.
+        let direction = distance < 0 ? 1 : -1
+        return event.isDirectionInvertedFromDevice ? direction : -direction
+    }
+
+    /// Whether a scroll event is mostly sideways (so the video player shouldn't scrub with it).
+    static func isHorizontal(_ event: NSEvent) -> Bool { abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) }
 }

@@ -54,7 +54,7 @@ struct PreferencesView: View {
                             }))
                             .accessibilityIdentifier("read-only-toggle")
                         Button("Change DarkRoom PIN…") { state.phase = .setPIN(session.account.id) }
-                        Button("Sign Out of Immich", role: .destructive) { Task { await state.signOutCurrent() } }
+                        Button("Sign Out of Immich", role: .destructive) { state.requestSignOut() }
                     }
                 }
             }

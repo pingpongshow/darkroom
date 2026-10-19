@@ -29,7 +29,7 @@ DarkRoom is a Mac app for your Immich photo library, with Lightroom-style cullin
 
 Sidebar: Photos, Explore, Map, People, Places, Albums, Sharing, Favorites, Memories, Recently Added, Recently Edited, Tags, Archive, Locked Folder, Duplicates, Bursts, Large Files, Trash.
 
-- **‹ Back** (or Esc) goes from the editor to the photo, and from the photo to the grid, which shows the photo you were on. In a photo, swipe left/right with two fingers or use the ‹ › arrows for the previous/next photo. The date bar beside the grid jumps to a year or month; hover to see the full date.
+- **‹ Back** (or Esc) goes from the editor to the photo, and from the photo to the grid, which shows the photo you were on. In a photo or video, swipe left/right with two fingers (on videos, scrub with the progress bar) or use the ‹ › arrows for the previous/next photo. The date bar beside the grid jumps to a year or month; hover to see the full date.
 - **Edit** in the title bar (or D, or right-click ▸ Edit Photo) opens the editor: Crop, Rotate, Flip, Heal, Masks, White Balance and every adjustment panel.
 - Click a Live Photo (or press Space) to play it.
 - People: hover a face and click the eye to hide that person (also hidden in Immich); *Show hidden people* brings them back.
@@ -51,7 +51,7 @@ Type a description ("dog on the beach") for Immich's smart search. The filter bu
 - Panels: Profile & RAW, White Balance, Tone, Presence, Tone Curve, Colour Mixer, Colour Grading, Detail, Effects, Lens Corrections, Transform (Upright), Calibration, Masks, Retouch.
 - Crop (R), white-balance picker (W), black & white (V), before/after (\\), masks (M, ⇧M, K), spot removal (Q), auto tone (⌘U).
 - **Presets** on the left: hover to preview, click to apply, then drag Amount. ⌃1–⌃9 apply favourite presets anywhere. Import Lightroom `.xmp` presets and `.cube` LUTs; export your own as `.darkroom-preset`.
-- **Save** (⌘S) saves and closes the editor; **Cancel** discards unsaved changes and closes it; **Reset** goes back to the last saved version (or the original) and stays in the editor. Leaving with unsaved changes asks first.
+- **Save** (⌘S) saves and closes the editor; **Cancel** discards unsaved changes and closes it; **Reset** goes back to the last saved version (or the original) and stays in the editor. Leaving the editor in any way with unsaved changes (Back, Esc, arrows, another photo, the view switcher, sidebar, lock, quit) asks Save / Don't Save / Keep Editing. If DarkRoom locks itself while you edit, the changes are kept on this Mac and offered again next time you open that photo.
 - Saving: Crop/rotate-only edits of normal photos use Immich's own edit; anything else creates an **edited version** (`name-edit.ext`) stacked on top of the original, with the original hidden so nothing appears twice. Re-open any time: every slider is where you left it. *Revert to Original* undoes it.
 - Merge to HDR (⌃H) and Panorama (⌃M) from a selection.
 

@@ -37,6 +37,7 @@ struct LibraryShell: View {
     @EnvironmentObject var library: LibraryModel
     @Environment(\.undoManager) private var undoManager
     @State private var keyMonitor: Any?
+    @State private var scrollMonitor: Any?
     @State private var confirmEmptyTrash = false
     @State private var trashCount = 0
 
@@ -100,7 +101,7 @@ struct LibraryShell: View {
             }
             .keyboardShortcut(.defaultAction)
             Button("Don’t Save", role: .destructive) { library.develop.discardChanges(); pending.action() }
-            Button("Keep Editing", role: .cancel) {}
+            Button("Keep Editing", role: .cancel) { pending.onCancel?() }
         } message: { _ in Text("Your edits haven’t been saved to Immich yet.") }
         .confirmationDialog("Move all rejected photos to Immich’s trash?", isPresented: $library.confirmTrashRejects) {
             Button("Move Rejects to Trash", role: .destructive) { library.trashRejects() }
@@ -154,6 +155,7 @@ struct LibraryShell: View {
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         }
     }
 
@@ -204,6 +206,17 @@ struct LibraryShell: View {
     // MARK: Lightroom keyboard shortcuts
 
     private func installKeyMonitor() {
+        // Videos (and a playing Live Photo): a sideways trackpad swipe moves between items instead of scrubbing;
+        // the progress bar is the way to move through a video.
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard library.mode == .loupe, let asset = library.focusedAsset, asset.isVideo || library.playingLive,
+                  SwipeGesture.isTrackpadGesture(event), let content = event.window?.contentView else { return event }
+            let p = event.locationInWindow
+            guard library.loupeFrame.contains(CGPoint(x: p.x, y: content.bounds.height - p.y)) else { return event }
+            if let direction = library.videoSwipe.handle(event) { library.step(direction) }
+            // Swallow sideways scrolling (and its glide) so the player doesn't scrub; vertical passes through.
+            return SwipeGesture.isHorizontal(event) || event.momentumPhase != [] ? nil : event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Never steal keys from text fields.
             if let text = event.window?.firstResponder as? NSTextView, text.isEditable,
@@ -394,15 +407,15 @@ struct TopBar: View {
             Menu {
                 Text(state.session?.account.email ?? "")
                 Divider()
-                Button("Lock DarkRoom") { state.lock() }
-                Button("Switch User…") { state.lock() }
+                Button("Lock DarkRoom") { state.requestLock() }
+                Button("Switch User…") { state.requestLock() }
                 if state.session?.account.isAdmin == true {
                     Button("Administration in Immich Web…") {
                         if let url = state.session?.client.serverURL.appending(path: "admin") { NSWorkspace.shared.open(url) }
                     }
                 }
                 Divider()
-                Button("Sign Out") { Task { await state.signOutCurrent() } }
+                Button("Sign Out") { state.requestSignOut() }
             } label: {
                 if let account = state.session?.account { AvatarView(account: account, size: 24) }
             }
