@@ -151,6 +151,7 @@ final class LibraryModel: ObservableObject {
     /// The locked folder is unlocked (Immich PIN entered) for this visit.
     @Published var lockedUnlocked = false
     @Published var slideshow: SlideshowRequest?
+    @Published var mergeRequest: MergeRequest?
     /// Navigation history for Back (⌘[).
     private var history: [LibraryDestination] = []
     private var navigatingBack = false

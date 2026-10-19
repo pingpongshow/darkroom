@@ -25,8 +25,10 @@ extension RenderEngine {
     }
 
     /// Straighten (auto-cropped) and crop, applied to an oriented image (or a mask with the same extent).
-    public func frame(_ oriented: CIImage, _ g: EditRecipe.Geometry) -> CIImage {
+    public func frame(_ oriented: CIImage, _ g: EditRecipe.Geometry, lens: EditRecipe.LensCorrection = .init()) -> CIImage {
         var image = oriented
+        if lens.distortion != 0 { image = correctDistortion(image, amount: lens.distortion) }
+        if g.transform != .identity { image = applyTransform(image, g.transform) }
         if g.straighten != 0 {
             let size = image.extent.size
             let angle = g.straighten * .pi / 180
@@ -46,6 +48,89 @@ extension RenderEngine {
             image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
         }
         return image
+    }
+
+    /// Barrel (positive) / pincushion (negative) correction with a radial bump centred on the frame.
+    func correctDistortion(_ image: CIImage, amount: Double) -> CIImage {
+        let e = image.extent
+        let filter = CIFilter.bumpDistortion()
+        filter.inputImage = image.clampedToExtent()
+        filter.center = CGPoint(x: e.midX, y: e.midY)
+        filter.radius = Float(hypot(e.width, e.height) / 2)
+        filter.scale = Float(-amount / 100 * 0.35)
+        return (filter.outputImage ?? image).cropped(to: e)
+    }
+
+    /// Perspective (keystone), rotation, aspect, scale and offset; cropped to the largest area with pixels.
+    func applyTransform(_ image: CIImage, _ t: EditRecipe.Transform) -> CIImage {
+        let e = image.extent
+        let w = e.width, h = e.height
+        let v = CGFloat(t.vertical / 100) * 0.35, hz = CGFloat(t.horizontal / 100) * 0.35
+        // Keystone: vertical narrows the top (positive) or bottom; horizontal narrows the right or left.
+        var tl = CGPoint(x: e.minX + max(0, v) * w / 2, y: e.maxY - max(0, -hz) * h / 2)
+        var tr = CGPoint(x: e.maxX - max(0, v) * w / 2, y: e.maxY - max(0, hz) * h / 2)
+        var bl = CGPoint(x: e.minX + max(0, -v) * w / 2, y: e.minY + max(0, -hz) * h / 2)
+        var br = CGPoint(x: e.maxX - max(0, -v) * w / 2, y: e.minY + max(0, hz) * h / 2)
+        // Rotate / aspect / scale / offset about the centre.
+        let c = CGPoint(x: e.midX, y: e.midY)
+        let sx = CGFloat(t.scale / 100) * (1 + CGFloat(max(0, t.aspect)) / 100), sy = CGFloat(t.scale / 100) * (1 + CGFloat(max(0, -t.aspect)) / 100)
+        let affine = CGAffineTransform(translationX: -c.x, y: -c.y)
+            .concatenating(CGAffineTransform(scaleX: sx, y: sy))
+            .concatenating(CGAffineTransform(rotationAngle: CGFloat(-t.rotate * .pi / 180)))
+            .concatenating(CGAffineTransform(translationX: c.x + CGFloat(t.offsetX / 100) * w / 2, y: c.y - CGFloat(t.offsetY / 100) * h / 2))
+        tl = tl.applying(affine); tr = tr.applying(affine); bl = bl.applying(affine); br = br.applying(affine)
+        let filter = CIFilter.perspectiveTransform()
+        filter.inputImage = image
+        filter.topLeft = tl; filter.topRight = tr; filter.bottomLeft = bl; filter.bottomRight = br
+        guard let out = filter.outputImage else { return image }
+        // Keep only the area covered by the photo (inside the transformed quadrilateral and the frame).
+        let inner = CGRect(x: max(tl.x, bl.x, e.minX), y: max(bl.y, br.y, e.minY),
+                           width: 0, height: 0)
+        let right = min(tr.x, br.x, e.maxX), top = min(tl.y, tr.y, e.maxY)
+        let rect = CGRect(x: inner.minX, y: inner.minY, width: max(1, right - inner.minX), height: max(1, top - inner.minY)).integral
+        let cropped = out.cropped(to: rect)
+        return cropped.transformed(by: CGAffineTransform(translationX: -cropped.extent.minX, y: -cropped.extent.minY))
+    }
+
+    /// Brightens (positive) or darkens the corners to correct lens vignetting.
+    func correctVignetting(_ image: CIImage, _ lens: EditRecipe.LensCorrection) -> CIImage {
+        let e = image.extent
+        let half = hypot(e.width, e.height) / 2
+        let inner = half * (0.2 + lens.vignettingMidpoint / 100 * 0.6)
+        let mask = CIFilter(name: "CIRadialGradient", parameters: [
+            "inputCenter": CIVector(x: e.midX, y: e.midY), "inputRadius0": inner, "inputRadius1": half,
+            "inputColor0": CIColor.black, "inputColor1": CIColor.white])!.outputImage!.cropped(to: e)
+        let adjusted = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: lens.vignetting / 100 * 1.5])
+        return adjusted.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: image, kCIInputMaskImageKey: mask]).cropped(to: e)
+    }
+
+    /// Removes purple / green fringes on high-contrast edges (desaturates those hues where edges are strong).
+    func defringe(_ image: CIImage, _ lens: EditRecipe.LensCorrection, scale: CGFloat) -> CIImage {
+        let e = image.extent
+        let edges = image.applyingFilter("CIEdges", parameters: [kCIInputIntensityKey: 8])
+            .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+            .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: max(1, 2 * scale)])
+            .applyingFilter("CIColorClamp").cropped(to: e)
+        // Hue mask for purple/magenta and green, scaled by the chosen amounts.
+        let size = 24
+        var cube = [Float](repeating: 0, count: size * size * size * 4)
+        var i = 0
+        for b in 0..<size { for g in 0..<size { for r in 0..<size {
+            let hsl = ColorTransform.rgbToHSL(SIMD3(Float(r), Float(g), Float(b)) / Float(size - 1))
+            let purple = ColorTransform.bandWeight(hue: hsl.x * 360, centre: 285, width: 50) * Float(lens.purpleFringe / 20)
+            let green = ColorTransform.bandWeight(hue: hsl.x * 360, centre: 115, width: 40) * Float(lens.greenFringe / 20)
+            let w = min(1, max(purple, green) * min(1, hsl.y * 2))
+            cube[i] = w; cube[i + 1] = w; cube[i + 2] = w; cube[i + 3] = 1
+            i += 4
+        } } }
+        let hueFilter = CIFilter.colorCubeWithColorSpace()
+        hueFilter.inputImage = image
+        hueFilter.cubeDimension = Float(size)
+        hueFilter.cubeData = cube.withUnsafeBufferPointer { Data(buffer: $0) }
+        hueFilter.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let mask = (hueFilter.outputImage ?? image).applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: edges]).cropped(to: e)
+        let neutral = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+        return neutral.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: image, kCIInputMaskImageKey: mask]).cropped(to: e)
     }
 
     /// Normalised (top-left) point → Core Image coordinates in an oriented extent.

@@ -5,6 +5,8 @@ public enum RecipeGroup: String, CaseIterable, Codable, Identifiable, Sendable {
     case profile = "Profile & RAW", whiteBalance = "White Balance", tone = "Tone", presence = "Presence"
     case curve = "Tone Curve", mixer = "Colour Mixer", grading = "Colour Grading", detail = "Detail", effects = "Effects"
     case geometry = "Crop & Geometry"
+    case lens = "Lens Corrections"
+    case calibration = "Calibration"
     case masks = "Masks"
     case retouch = "Retouch"
 
@@ -17,7 +19,7 @@ public enum RecipeGroup: String, CaseIterable, Codable, Identifiable, Sendable {
         switch self {
         case .profile:
             r.profile = source.profile; r.profileAmount = source.profileAmount; r.raw = source.raw
-            r.lutProfile = source.lutProfile; r.lutAmount = source.lutAmount
+            r.lutProfile = source.lutProfile; r.lutAmount = source.lutAmount; r.hdr = source.hdr
         case .whiteBalance:
             r.whiteBalance = source.whiteBalance; r.temperature = source.temperature; r.tint = source.tint
             r.neutralPoint = source.neutralPoint
@@ -44,6 +46,10 @@ public enum RecipeGroup: String, CaseIterable, Codable, Identifiable, Sendable {
             r.grainAmount = source.grainAmount; r.grainSize = source.grainSize; r.grainRoughness = source.grainRoughness
         case .geometry:
             r.geometry = source.geometry
+        case .lens:
+            r.lens = source.lens; r.raw.lensCorrection = source.raw.lensCorrection
+        case .calibration:
+            r.calibration = source.calibration
         case .masks:
             r.masks = source.masks
         case .retouch:

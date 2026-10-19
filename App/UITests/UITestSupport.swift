@@ -54,6 +54,19 @@ enum UITestSupport {
         return item
     }
 
+    /// Clicks a sidebar item and waits until the page title matches (retrying if the click landed elsewhere).
+    static func go(_ app: XCUIApplication, _ title: String) {
+        let heading = app.staticTexts["destination-title"]
+        for _ in 0..<3 {
+            sidebar(app, title).click()
+            let deadline = Date().addingTimeInterval(4)
+            while Date() < deadline {
+                if (heading.value as? String) == title { return }
+                usleep(200_000)
+            }
+        }
+    }
+
     static func screenshot(_ name: String, in test: XCTestCase) {
         let attachment = XCTAttachment(screenshot: XCUIApplication().windows.firstMatch.screenshot())
         attachment.name = name

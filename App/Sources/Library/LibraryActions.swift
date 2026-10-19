@@ -388,6 +388,12 @@ extension LibraryModel {
         ]))
         if ids.count >= 2 {
             entries.append(MenuEntry(title: "Stack", symbol: "square.stack", key: "g", modifiers: .command) { [weak self] in self?.stackSelection() })
+            entries.append(MenuEntry(title: "Merge to HDR…", symbol: "camera.aperture", key: "h", modifiers: .control) { [weak self] in
+                self?.startMerge(.hdr)
+            })
+            entries.append(MenuEntry(title: "Merge to Panorama…", symbol: "pano", key: "m", modifiers: .control) { [weak self] in
+                self?.startMerge(.panorama(.perspective))
+            })
         }
         if assets.contains(where: { $0.stackID != nil }) {
             entries.append(MenuEntry(title: "Unstack", symbol: "square.stack.3d.down.right", key: "g", modifiers: [.command, .shift]) { [weak self] in

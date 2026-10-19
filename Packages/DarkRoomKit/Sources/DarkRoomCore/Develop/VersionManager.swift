@@ -108,7 +108,7 @@ public struct VersionManager: Sendable {
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
         let base = (original.originalFileName as NSString).deletingPathExtension
-        let (_, ext) = RenderEngine.outputType(for: originalFile)
+        let (_, ext) = RenderEngine.outputType(for: originalFile, hdr: recipe.hdr)
         let output = work.appending(path: "\(base)-edit.\(ext)")
         try RenderEngine.shared.export(original: originalFile, recipe: recipe, to: output)
 

@@ -122,7 +122,11 @@ final class DevelopModel: ObservableObject {
                     let scaleFactor = isRAW ? max(0.25, min(1, Double(maxPixel) / 2500)) : 1
                     let base = try engine.base(file, recipe: recipe, draft: false, scaleFactor: scaleFactor)
                     let image = engine.render(base, recipe: recipe, isRAW: isRAW, maxPixel: maxPixel, neutralKey: file.path)
-                    guard let cg = engine.cgImage(image) else { return nil }
+                    // HDR previews keep values above 1 (shown with EDR on capable displays).
+                    let cg = recipe.hdr
+                        ? engine.cgImage(image, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!, format: .RGBAh)
+                        : engine.cgImage(image)
+                    guard let cg else { return nil }
                     return .success((cg, Histogram.compute(cg)))
                 } catch {
                     return .failure(error)
@@ -272,7 +276,7 @@ final class DevelopModel: ObservableObject {
             let image: CGImage? = await Task.detached(priority: .userInitiated) {
                 guard let base = try? engine.base(file, recipe: recipe, draft: true, scaleFactor: isRAW ? 0.25 : 1) else { return nil }
                 let oriented = engine.orient(base, recipe.geometry)
-                var m = engine.frame(engine.maskImage(mask, oriented: oriented, sourceKey: file.path), recipe.geometry)
+                var m = engine.frame(engine.maskImage(mask, oriented: oriented, sourceKey: file.path), recipe.geometry, lens: recipe.lens)
                 m = m.transformed(by: CGAffineTransform(scaleX: size.width / m.extent.width, y: size.height / m.extent.height))
                 let red = CIImage(color: CIColor(red: 1, green: 0.15, blue: 0.1, alpha: 0.5)).cropped(to: m.extent)
                 let overlay = red.applyingFilter("CIBlendWithMask", parameters: [
@@ -447,6 +451,26 @@ final class DevelopModel: ObservableObject {
         RenderEngine.shared.context.render(avg, toBitmap: &px, rowBytes: 16, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
                                            format: .RGBAf, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
         return SIMD3(px[0], px[1], px[2])
+    }
+
+    // MARK: Upright
+
+    /// Lightroom-style Upright: analyses the photo (Vision) and sets straighten / vertical keystone.
+    func applyUpright(_ mode: Upright.Mode) {
+        guard let file = originalFile else { return }
+        let recipe = self.recipe, isRAW = self.isRAW, engine = self.engine
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> (Double, EditRecipe.Transform)? in
+                guard let base = try? engine.base(file, recipe: recipe, draft: true, scaleFactor: isRAW ? 0.3 : 1) else { return nil }
+                return Upright.analyze(engine.orient(base, recipe.geometry), mode: mode)
+            }.value
+            guard let (straighten, transform) = result else { return }
+            set { r in
+                if mode != .vertical { r.geometry.straighten = straighten }
+                if mode != .level { r.geometry.transform.vertical = transform.vertical }
+            }
+            library.flash(mode == .level && straighten == 0 ? "No horizon found" : "Upright \(mode.rawValue) applied")
+        }
     }
 
     // MARK: Snapshots

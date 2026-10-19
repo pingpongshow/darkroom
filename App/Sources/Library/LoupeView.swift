@@ -127,6 +127,8 @@ final class ZoomScrollView: NSScrollView {
         autohidesScrollers = true
         drawsBackground = false
         imageView.imageScaling = .scaleProportionallyUpOrDown
+        // Show HDR (extended-range) images with EDR headroom where the display supports it.
+        imageView.preferredImageDynamicRange = .high
         imageView.imageAlignment = .alignCenter
         documentView = imageView
         contentView = CenteringClipView()

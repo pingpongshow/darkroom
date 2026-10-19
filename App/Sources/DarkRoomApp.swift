@@ -1,4 +1,5 @@
 import SwiftUI
+import DarkRoomCore
 import AppKit
 
 @main
@@ -49,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        RenderEngine.exiftoolURL = Bundle.main.url(forResource: "exiftool", withExtension: nil, subdirectory: "exiftool")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

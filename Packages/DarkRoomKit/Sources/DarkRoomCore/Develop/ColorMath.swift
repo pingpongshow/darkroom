@@ -30,6 +30,7 @@ public struct ColorTransform: Sendable {
         let curvesIdentity: Bool = rgbCurve == nil && redCurve == nil && greenCurve == nil && blueCurve == nil
         let colorIdentity: Bool = r.vibrance == 0 && r.saturation == 0 && r.hsl.values.allSatisfy(\.isZero) && !r.monochrome
         return toneIdentity && curvesIdentity && colorIdentity && r.grading == EditRecipe.ColorGrading() && look.isIdentity
+            && r.calibration.isIdentity
     }
 
     /// Applies the transform to a gamma-encoded RGB colour in 0…1.
@@ -37,7 +38,8 @@ public struct ColorTransform: Sendable {
         var c = simd_clamp(input, SIMD3(repeating: 0), SIMD3(repeating: 1))
         let r = recipe
 
-        // Profile look first (like a camera profile), scaled by Profile amount.
+        // Calibration (camera primaries and shadow tint), then the profile look, scaled by Profile amount.
+        if !r.calibration.isIdentity { c = calibrate(c) }
         c = look.apply(c)
 
         // Tone: contrast, whites/blacks, parametric curve applied to luminance-preserving ratios.
@@ -69,6 +71,30 @@ public struct ColorTransform: Sendable {
         if r.grading != EditRecipe.ColorGrading() { c = grade(c) }
 
         return simd_clamp(c, SIMD3(repeating: 0), SIMD3(repeating: 1))
+    }
+
+    // MARK: Calibration
+
+    /// Broad primary-based hue/saturation shifts (like Lightroom's Calibration panel) and a shadow tint.
+    func calibrate(_ input: SIMD3<Float>) -> SIMD3<Float> {
+        let cal = recipe.calibration
+        var hsl = ColorTransform.rgbToHSL(input)
+        let hue = hsl.x * 360
+        var hueShift: Float = 0, satScale: Float = 0
+        for (centre, h, sat) in [(Float(0), cal.redHue, cal.redSaturation), (120, cal.greenHue, cal.greenSaturation), (240, cal.blueHue, cal.blueSaturation)] {
+            let w = ColorTransform.bandWeight(hue: hue, centre: centre, width: 120)
+            hueShift += w * Float(h / 100) * 20
+            satScale += w * Float(sat / 100)
+        }
+        hsl.x = ((hue + hueShift).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) / 360
+        hsl.y = simd_clamp(hsl.y * (1 + satScale), 0, 1)
+        var c = ColorTransform.hslToRGB(hsl)
+        if cal.shadowTint != 0 {
+            let luma = simd_dot(c, SIMD3(0.2126, 0.7152, 0.0722))
+            let w = powf(1 - luma, 2) * Float(cal.shadowTint / 100) * 0.08
+            c += SIMD3(w, -w, w)
+        }
+        return c
     }
 
     // MARK: Tone

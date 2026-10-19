@@ -78,6 +78,9 @@ struct LibraryShell: View {
             }
         }
         .focusedSceneObject(library)
+        .sheet(item: $library.mergeRequest) { request in
+            MergeSheet(request: request).environmentObject(library)
+        }
         .sheet(item: $library.sheet) { sheet in
             LibrarySheetView(sheet: sheet).environmentObject(library)
         }

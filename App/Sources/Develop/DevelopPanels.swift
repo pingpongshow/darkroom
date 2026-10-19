@@ -24,6 +24,9 @@ struct DevelopPanels: View {
                     section("Colour Grading") { GradingPanel(develop: develop) }
                     section("Detail") { DetailPanel(develop: develop) }
                     section("Effects") { EffectsPanel(develop: develop) }
+                    section("Lens Corrections") { LensPanel(develop: develop) }
+                    section("Transform") { TransformPanel(develop: develop) }
+                    section("Calibration") { CalibrationPanel(develop: develop) }
                     section("Masks") { MasksPanel(develop: develop) }
                     section("Retouch") { RetouchPanel(develop: develop) }
                     section("Snapshots") { SnapshotsPanel(develop: develop) }
@@ -129,6 +132,9 @@ struct ProfilePanel: View {
         if develop.recipe.lutProfile != nil {
             DevelopSlider(develop: develop, title: "LUT amount", keyPath: \.lutAmount, range: 0...100, defaultValue: 100)
         }
+        Toggle("HDR (keep highlights above white, export with gain map)", isOn: Binding(
+            get: { develop.recipe.hdr }, set: { v in develop.set { $0.hdr = v } }))
+            .accessibilityIdentifier("develop-hdr")
         if develop.isRAW {
             Text("RAW engine").font(.caption2).foregroundStyle(Theme.textTertiary).padding(.top, 4)
             DevelopSlider(develop: develop, title: "Boost", keyPath: \.raw.boost, range: 0...1, step: 0.01, format: "%.2f", defaultValue: 1)
@@ -480,5 +486,56 @@ struct SnapshotsPanel: View {
                     .buttonStyle(.borderless)
             }
         }
+    }
+}
+
+struct LensPanel: View {
+    @ObservedObject var develop: DevelopModel
+    var body: some View {
+        if develop.isRAW {
+            Toggle("Profile corrections (Apple RAW engine)", isOn: Binding(get: { develop.recipe.raw.lensCorrection },
+                                                                           set: { v in develop.set { $0.raw.lensCorrection = v } }))
+        }
+        DevelopSlider(develop: develop, title: "Distortion", keyPath: \.lens.distortion)
+        DevelopSlider(develop: develop, title: "Vignetting", keyPath: \.lens.vignetting)
+        DevelopSlider(develop: develop, title: "Midpoint", keyPath: \.lens.vignettingMidpoint, range: 0...100, defaultValue: 50)
+        Text("Defringe").font(.caption2).foregroundStyle(Theme.textTertiary).padding(.top, 4)
+        DevelopSlider(develop: develop, title: "Purple amount", keyPath: \.lens.purpleFringe, range: 0...20)
+        DevelopSlider(develop: develop, title: "Green amount", keyPath: \.lens.greenFringe, range: 0...20)
+    }
+}
+
+struct TransformPanel: View {
+    @ObservedObject var develop: DevelopModel
+    var body: some View {
+        HStack {
+            Text("Upright").foregroundStyle(Theme.textSecondary)
+            Spacer()
+            ForEach(Upright.Mode.allCases, id: \.self) { mode in
+                Button(mode.rawValue) { develop.applyUpright(mode) }.controlSize(.small)
+                    .accessibilityIdentifier("upright-\(mode.rawValue)")
+            }
+            Button("Off") { develop.set { $0.geometry.transform = .identity; $0.geometry.straighten = 0 } }.controlSize(.small)
+        }
+        DevelopSlider(develop: develop, title: "Vertical", keyPath: \.geometry.transform.vertical)
+        DevelopSlider(develop: develop, title: "Horizontal", keyPath: \.geometry.transform.horizontal)
+        DevelopSlider(develop: develop, title: "Rotate", keyPath: \.geometry.transform.rotate, range: -10...10, step: 0.1, format: "%.1f")
+        DevelopSlider(develop: develop, title: "Aspect", keyPath: \.geometry.transform.aspect)
+        DevelopSlider(develop: develop, title: "Scale", keyPath: \.geometry.transform.scale, range: 50...150, defaultValue: 100)
+        DevelopSlider(develop: develop, title: "Offset X", keyPath: \.geometry.transform.offsetX)
+        DevelopSlider(develop: develop, title: "Offset Y", keyPath: \.geometry.transform.offsetY)
+    }
+}
+
+struct CalibrationPanel: View {
+    @ObservedObject var develop: DevelopModel
+    var body: some View {
+        DevelopSlider(develop: develop, title: "Shadows tint", keyPath: \.calibration.shadowTint, track: [.green, .white, .pink])
+        DevelopSlider(develop: develop, title: "Red hue", keyPath: \.calibration.redHue, track: [.pink, .red, .orange])
+        DevelopSlider(develop: develop, title: "Red saturation", keyPath: \.calibration.redSaturation)
+        DevelopSlider(develop: develop, title: "Green hue", keyPath: \.calibration.greenHue, track: [.yellow, .green, .cyan])
+        DevelopSlider(develop: develop, title: "Green saturation", keyPath: \.calibration.greenSaturation)
+        DevelopSlider(develop: develop, title: "Blue hue", keyPath: \.calibration.blueHue, track: [.cyan, .blue, .purple])
+        DevelopSlider(develop: develop, title: "Blue saturation", keyPath: \.calibration.blueSaturation)
     }
 }

@@ -79,6 +79,15 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     // Geometry
     public var geometry = Geometry()
 
+    // Lens corrections (manual; RAW lens profiles are in `raw.lensCorrection`).
+    public var lens = LensCorrection()
+
+    // Calibration (camera primaries).
+    public var calibration = Calibration()
+
+    /// Keep highlights above SDR white and export HDR (gain-map HEIC/JPEG) where the format allows.
+    public var hdr = false
+
     // Local adjustments (masks) and retouching, applied after the global adjustments.
     public var masks: [Mask] = []
     public var retouch: [RetouchSpot] = []
@@ -246,12 +255,37 @@ public struct EditRecipe: Codable, Hashable, Sendable {
 
     /// Perspective transform (M4c), kept here so recipes are stable.
     public struct Transform: Codable, Hashable, Sendable {
-        public var vertical: Double = 0
-        public var horizontal: Double = 0
-        public var rotate: Double = 0
-        public var aspect: Double = 0
-        public var scale: Double = 100
+        public var vertical: Double = 0      // -100…100 keystone
+        public var horizontal: Double = 0    // -100…100 keystone
+        public var rotate: Double = 0        // degrees -10…10
+        public var aspect: Double = 0        // -100…100
+        public var scale: Double = 100       // 50…150 %
+        public var offsetX: Double = 0       // -100…100
+        public var offsetY: Double = 0
+        public init() {}
         public static let identity = Transform()
+    }
+
+    public struct LensCorrection: Codable, Hashable, Sendable {
+        /// -100 (fix pincushion) … 100 (fix barrel).
+        public var distortion: Double = 0
+        /// -100 … 100: positive brightens dark corners.
+        public var vignetting: Double = 0
+        public var vignettingMidpoint: Double = 50
+        /// Defringe strength 0…20 for purple and green fringes on high-contrast edges.
+        public var purpleFringe: Double = 0
+        public var greenFringe: Double = 0
+        public init() {}
+        public var isIdentity: Bool { self == LensCorrection() }
+    }
+
+    public struct Calibration: Codable, Hashable, Sendable {
+        public var shadowTint: Double = 0       // -100 green … 100 magenta
+        public var redHue: Double = 0, redSaturation: Double = 0
+        public var greenHue: Double = 0, greenSaturation: Double = 0
+        public var blueHue: Double = 0, blueSaturation: Double = 0
+        public init() {}
+        public var isIdentity: Bool { self == Calibration() }
     }
 
     public struct Snapshot: Codable, Hashable, Sendable, Identifiable {
@@ -289,6 +323,7 @@ extension EditRecipe {
         get("vignetteFeather", &vignetteFeather); get("grainAmount", &grainAmount); get("grainSize", &grainSize)
         get("grainRoughness", &grainRoughness); get("geometry", &geometry); get("snapshots", &snapshots)
         get("masks", &masks); get("retouch", &retouch); get("redEye", &redEye)
+        get("lens", &lens); get("calibration", &calibration); get("hdr", &hdr)
     }
 
     struct AnyKey: CodingKey {

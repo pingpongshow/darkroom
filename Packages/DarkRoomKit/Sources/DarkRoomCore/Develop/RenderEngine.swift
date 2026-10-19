@@ -107,7 +107,8 @@ public final class RenderEngine: @unchecked Sendable {
         let g = recipe.geometry
         // Retouch spots and masks live in the rotated/mirrored (uncropped) space.
         let oriented = applyRetouch(orient(source, g), spots: recipe.retouch)
-        var image = frame(oriented, g)
+        let lens = recipe.lens
+        var image = frame(oriented, g, lens: lens)
         var scale: CGFloat = 1
         if let maxPixel, max(image.extent.width, image.extent.height) > maxPixel {
             scale = maxPixel / max(image.extent.width, image.extent.height)
@@ -121,7 +122,7 @@ public final class RenderEngine: @unchecked Sendable {
         let r = recipe
         let frameScale = scale
         let frameAndScale: (CIImage) -> CIImage = { [unowned self] mask in
-            let framed = self.frame(mask, g)
+            let framed = self.frame(mask, g, lens: lens)
             return frameScale < 1 ? framed.transformed(by: CGAffineTransform(scaleX: frameScale, y: frameScale)) : framed
         }
         if r.redEye { image = applyRedEye(image) }
@@ -133,6 +134,8 @@ public final class RenderEngine: @unchecked Sendable {
         if !isRAW, r.exposure != 0 {
             image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: r.exposure])
         }
+
+        if lens.vignetting != 0 { image = correctVignetting(image, lens) }
 
         // LUT profile (imported .cube or built-in camera look), applied before tone like a camera profile.
         if let id = r.lutProfile, r.lutAmount > 0, let lut = LUTLibrary.shared.lut(id) {
@@ -175,17 +178,29 @@ public final class RenderEngine: @unchecked Sendable {
                 kCIInputBrightnessKey: -r.dehaze / 100 * 0.04])
         }
 
-        // Global colour via LUT.
+        // Global colour via LUT. In HDR mode the LUT works on the SDR-scaled colour and the headroom is
+        // restored afterwards, so highlights above SDR white survive.
         let transform = ColorTransform(r)
         if !transform.isIdentity {
             let size = 33
             let filter = CIFilter.colorCubeWithColorSpace()
-            filter.inputImage = image
             filter.cubeDimension = Float(size)
             filter.cubeData = cachedCube(transform, size: size)
             filter.colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-            image = filter.outputImage ?? image
+            if r.hdr {
+                let headroom = image.applyingFilter("CIMaximumComponent")
+                    .applyingFilter("CIColorClamp", parameters: ["inputMinComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
+                                                                 "inputMaxComponents": CIVector(x: 64, y: 64, z: 64, w: 1)])
+                filter.inputImage = headroom.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+                if let graded = filter.outputImage {
+                    image = graded.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: headroom]).cropped(to: extent)
+                }
+            } else {
+                filter.inputImage = image
+                image = filter.outputImage ?? image
+            }
         }
+        if lens.purpleFringe > 0 || lens.greenFringe > 0 { image = defringe(image, lens, scale: scale) }
 
         // Local adjustments through masks.
         if r.hasMasks {
@@ -369,9 +384,10 @@ public final class RenderEngine: @unchecked Sendable {
     }
 
     /// Output file type for an original, per the plan: same format; RAW → 16-bit ProPhoto TIFF.
-    public static func outputType(for original: URL) -> (type: UTType, ext: String) {
+    public static func outputType(for original: URL, hdr: Bool = false) -> (type: UTType, ext: String) {
         let ext = original.pathExtension.lowercased()
-        if isRAW(original) { return (.tiff, "tif") }
+        // HDR from RAW goes to HEIC with a gain map (TIFF can't carry one).
+        if isRAW(original) { return hdr ? (.heic, "heic") : (.tiff, "tif") }
         switch ext {
         case "jpg", "jpeg": return (.jpeg, ext)
         case "heic", "heif": return (.heic, ext)
@@ -386,7 +402,11 @@ public final class RenderEngine: @unchecked Sendable {
         let isRAW = Self.isRAW(original)
         let base = try base(original, recipe: recipe)
         let rendered = render(base, recipe: recipe, isRAW: isRAW, neutralKey: original.path)
-        let (type, _) = Self.outputType(for: original)
+        let (type, _) = Self.outputType(for: original, hdr: recipe.hdr)
+        if recipe.hdr, type == .heic || type == .jpeg {
+            try exportHDR(rendered, type: type, original: original, to: destination)
+            return
+        }
         let sixteenBit = isRAW || type == .tiff || type == .png && Self.bitDepth(original) > 8
         let colorSpace = isRAW ? CGColorSpace(name: CGColorSpace.rommrgb)! : (Self.colorSpace(original) ?? CGColorSpace(name: CGColorSpace.displayP3)!)
         guard let cg = context.createCGImage(rendered, from: rendered.extent, format: sixteenBit ? .RGBA16 : .RGBA8, colorSpace: colorSpace)
@@ -420,6 +440,34 @@ public final class RenderEngine: @unchecked Sendable {
         properties.removeValue(forKey: kCGImagePropertyMakerAppleDictionary)
         CGImageDestinationAddImage(dest, cg, properties as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { throw RenderError.writeFailed }
+    }
+
+    /// ExifTool used to copy metadata into files Core Image writes itself (set by the app).
+    public nonisolated(unsafe) static var exiftoolURL: URL?
+
+    /// HDR HEIC/JPEG: an SDR rendition plus an ISO gain map from the HDR image; metadata copied from the original.
+    func exportHDR(_ hdr: CIImage, type: UTType, original: URL, to destination: URL) throws {
+        let sdr = hdr.applyingFilter("CIToneMapHeadroom", parameters: ["inputTargetHeadroom": 1.0])
+        let colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
+        let options: [CIImageRepresentationOption: Any] = [
+            .hdrImage: hdr,
+            CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): Self.estimatedQuality(original),
+        ]
+        let data = type == .heic
+            ? context.heifRepresentation(of: sdr, format: .RGBA8, colorSpace: colorSpace, options: options)
+            : context.jpegRepresentation(of: sdr, colorSpace: colorSpace, options: options)
+        guard let data else { throw RenderError.writeFailed }
+        try data.write(to: destination, options: .atomic)
+        // Core Image writes no camera metadata: copy it from the original (lossless).
+        if let exiftool = Self.exiftoolURL {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+            process.arguments = [exiftool.path, "-overwrite_original", "-P", "-m", "-TagsFromFile", original.path,
+                                 "-all:all", "-Orientation=1", "-n", "-Software=DarkRoom", destination.path]
+            process.standardOutput = Pipe(); process.standardError = Pipe()
+            try process.run()
+            process.waitUntilExit()
+        }
     }
 
     static func metadata(of url: URL) -> [CFString: Any] {

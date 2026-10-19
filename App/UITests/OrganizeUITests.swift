@@ -25,7 +25,7 @@ final class OrganizeUITests: XCTestCase {
     }
 
     private func go(_ app: XCUIApplication, _ sidebar: String) {
-        UITestSupport.sidebar(app, sidebar).click()
+        UITestSupport.go(app, sidebar)
         sleep(1)
     }
 
