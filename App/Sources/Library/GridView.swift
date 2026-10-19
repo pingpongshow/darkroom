@@ -27,6 +27,8 @@ struct GridView: NSViewRepresentable {
         collection.register(MonthHeaderView.self, forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
                             withIdentifier: MonthHeaderView.identifier)
         collection.setAccessibilityIdentifier("photo-grid")
+        collection.setDraggingSourceOperationMask([.copy, .link], forLocal: true)
+        collection.setDraggingSourceOperationMask([.copy], forLocal: false)
         context.coordinator.attach(collection)
 
         let scroll = NSScrollView()
@@ -162,6 +164,25 @@ struct GridView: NSViewRepresentable {
             let section = sections[indexPath.section]
             header.configure(title: section.title, count: section.count)
             return header
+        }
+
+        // MARK: Drag (to sidebar albums, album cards)
+
+        func collectionView(_ collectionView: NSCollectionView, canDragItemsAt indexPaths: Set<IndexPath>, with event: NSEvent) -> Bool {
+            !indexPaths.isEmpty
+        }
+
+        func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
+            guard let asset = asset(at: indexPath) else { return nil }
+            // The first dragged item carries every selected id; the rest are placeholders.
+            let ids = library.selection.contains(asset.id) ? library.targetIDs : [asset.id]
+            let item = NSPasteboardItem()
+            if ids.first == asset.id || !library.selection.contains(asset.id) {
+                item.setString(GridDrag.prefix + ids.joined(separator: ","), forType: .string)
+            } else {
+                item.setString("", forType: .string)
+            }
+            return item
         }
 
         // MARK: Selection

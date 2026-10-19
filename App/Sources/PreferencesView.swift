@@ -3,6 +3,9 @@ import DarkRoomCore
 
 struct PreferencesView: View {
     @EnvironmentObject var state: AppState
+    @AppStorage("showMemories", store: .darkRoom) private var showMemories = true
+    @AppStorage("slideshowSeconds", store: .darkRoom) private var slideshowSeconds = 4.0
+    @AppStorage("slideshowKenBurns", store: .darkRoom) private var kenBurns = true
 
     var body: some View {
         TabView {
@@ -11,6 +14,11 @@ struct PreferencesView: View {
                     ForEach(AppearanceSetting.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Show memories above Photos", isOn: $showMemories)
+                Section("Slideshow (⌘↩)") {
+                    Stepper("\(Int(slideshowSeconds)) seconds per photo", value: $slideshowSeconds, in: 2...30)
+                    Toggle("Slow zoom (Ken Burns)", isOn: $kenBurns)
+                }
             }
             .tabItem { Label("General", systemImage: "gearshape") }
 
@@ -37,6 +45,6 @@ struct PreferencesView: View {
             .tabItem { Label("Accounts", systemImage: "person.2") }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 320)
+        .frame(width: 480, height: 380)
     }
 }

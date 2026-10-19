@@ -44,6 +44,7 @@ struct LoupeView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("loupe")
+            if let asset = library.focusedAsset, asset.stackID != nil { StackStrip(asset: asset) }
             if library.showFilmstrip { FilmstripView().frame(height: 86) }
         }
         .task(id: library.focusedAssetID) { await loadPreview() }

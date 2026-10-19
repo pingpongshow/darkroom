@@ -5,7 +5,8 @@ import DarkRoomCore
 /// Library areas shown in the sidebar.
 enum LibraryDestination: Hashable {
     case photos, explore, map, people, places, albums, sharing, favorites, recentlyAdded, recentlyEdited
-    case archive, locked, trash, tags, folders, duplicates
+    case archive, locked, trash, tags, folders, duplicates, bursts, largeFiles
+    case folder(String)
     case album(String), person(String), tag(String), partner(String)
     case search(SearchQuery)
     case mapSelection(MapSelection)
@@ -28,6 +29,9 @@ enum LibraryDestination: Hashable {
         case .tags: "Tags"
         case .folders: "Folders"
         case .duplicates: "Duplicates"
+        case .bursts: "Bursts"
+        case .largeFiles: "Large Files"
+        case .folder(let path): (path as NSString).lastPathComponent
         case .album: "Album"
         case .person: "Person"
         case .tag: "Tag"
@@ -55,6 +59,9 @@ enum LibraryDestination: Hashable {
         case .tags, .tag: "tag"
         case .folders: "folder"
         case .duplicates: "square.on.square"
+        case .bursts: "square.stack.3d.forward.dottedline"
+        case .largeFiles: "externaldrive"
+        case .folder: "folder"
         case .person: "person.crop.circle"
         case .search: "magnifyingglass"
         case .mapSelection: "map"
@@ -64,7 +71,7 @@ enum LibraryDestination: Hashable {
     /// Whether the destination shows a photo grid (timeline or a fixed result set).
     var showsGrid: Bool {
         switch self {
-        case .search, .mapSelection: true
+        case .search, .mapSelection, .recentlyAdded, .largeFiles, .folder, .locked: true
         default: timelineQuery != nil
         }
     }
@@ -76,6 +83,7 @@ enum LibraryDestination: Hashable {
         case .favorites: .favorites
         case .archive: .archive
         case .trash: .trash
+        case .locked: TimelineQuery(visibility: .locked, withStacked: false)
         case .album(let id): .album(id)
         case .person(let id): .person(id)
         case .tag(let id): .tag(id)
@@ -121,6 +129,13 @@ final class LibraryModel: ObservableObject {
     @Published var searchDraft = SearchQuery()
     /// Names for person destinations (filled by People / Explore).
     @Published var personNames: [String: String] = [:]
+    @Published var partnerNames: [String: String] = [:]
+    @Published var tagNames: [String: String] = [:]
+    /// Album comments/likes panel in place of the info panel.
+    @Published var showActivity = false
+    /// The locked folder is unlocked (Immich PIN entered) for this visit.
+    @Published var lockedUnlocked = false
+    @Published var slideshow: SlideshowRequest?
     /// Navigation history for Back (⌘[).
     private var history: [LibraryDestination] = []
     private var navigatingBack = false
@@ -165,6 +180,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func stop() {
+        if lockedUnlocked { Task { [client] in try? await LibraryUtilities.lockLockedFolder(client) } }
         socket?.stop()
         socketTask?.cancel()
     }
@@ -173,6 +189,9 @@ final class LibraryModel: ObservableObject {
         switch destination {
         case .person(let id): personNames[id].flatMap { $0.isEmpty ? nil : $0 } ?? "Unnamed person"
         case .search(let query): query.summary
+        case .album(let id): albums.first { $0.id == id }?.albumName ?? "Album"
+        case .tag(let id): tagNames[id] ?? "Tag"
+        case .partner(let id): partnerNames[id].map { "\($0)’s Photos" } ?? "Partner"
         default: destination.title
         }
     }
@@ -212,6 +231,19 @@ final class LibraryModel: ObservableObject {
             return TimelineStore(client: client, groupByMonth: !query.usesSmartSearch, flatTitle: "Best matches") {
                 try await SearchService.assets(query, client: client)
             }
+        case .recentlyAdded:
+            let client = self.client
+            return TimelineStore(client: client, groupByMonth: false, flatTitle: "Uploaded in the last 30 days") {
+                try await LibraryUtilities.recentlyAdded(client)
+            }
+        case .largeFiles:
+            let client = self.client
+            return TimelineStore(client: client, groupByMonth: false, flatTitle: "Largest first") {
+                try await LibraryUtilities.largeFiles(client).map(TimelineAsset.init)
+            }
+        case .folder(let path):
+            let client = self.client
+            return TimelineStore(client: client) { try await LibraryUtilities.assets(inFolder: path, client: client) }
         case .mapSelection(let selection):
             let ids = Set(selection.assetIDs)
             return TimelineStore(client: client) { [weak self] in
@@ -223,10 +255,24 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// Every timeline photo (for bursts); loaded once per session view.
+    func allTimelineAssets() async -> [TimelineAsset] {
+        let store = TimelineStore(client: client, query: .photos)
+        await store.reload()
+        await store.loadAll()
+        return store.loadedAssets
+    }
+
     private func destinationChanged() {
         selection = []
         focusedAssetID = nil
         mode = .grid
+        showActivity = false
+        if lockedUnlocked, destination != .locked {
+            // Leaving the locked folder locks it again.
+            lockedUnlocked = false
+            Task { [client] in try? await LibraryUtilities.lockLockedFolder(client) }
+        }
         if case .search(let query) = destination { searchDraft = query } else { searchDraft = SearchQuery() }
         guard let store = makeStore(for: destination) else { return }
         timeline = store

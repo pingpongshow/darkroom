@@ -17,6 +17,9 @@ struct LibrarySheetView: View {
         case .tags(let ids): TagsSheet(ids: ids)
         case .geotag(let ids): GeotagSheet(ids: ids)
         case .confirmEmptyTrash: EmptyView()
+        case .editAlbum(let id): EditAlbumSheet(albumID: id)
+        case .shareAlbum(let id): ShareAlbumSheet(albumID: id)
+        case .sharedLink(let albumID, let ids): SharedLinkSheet(albumID: albumID, assetIDs: ids)
         }
     }
 }

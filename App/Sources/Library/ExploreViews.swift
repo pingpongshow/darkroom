@@ -374,6 +374,7 @@ struct ExploreView: View {
             .padding(22)
         }
         .background(Theme.gridBackground)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("explore")
         .task {
             async let p: Void = people.load(library.client)

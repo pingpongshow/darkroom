@@ -14,6 +14,7 @@ struct DarkRoomApp: App {
                 .background(Theme.background)
                 .preferredColorScheme(state.appearance == .system ? nil : (state.appearance == .dark ? .dark : .light))
         }
+        .defaultSize(width: 1280, height: 860)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {

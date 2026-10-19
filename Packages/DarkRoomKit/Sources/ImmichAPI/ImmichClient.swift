@@ -149,9 +149,11 @@ public final class ImmichClient: Sendable {
 /// Immich error bodies: `{ "message": "..." | ["...", ...], "error": "...", "statusCode": 400 }`.
 struct ServerMessage: Decodable {
     let text: String
-    enum CodingKeys: String, CodingKey { case message, error }
+    enum CodingKeys: String, CodingKey { case message, error, errors }
+    struct FieldError: Decodable { let path: [JSONValue]?; let message: String }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        var text: String
         if let single = try? c.decode(String.self, forKey: .message) {
             text = single
         } else if let many = try? c.decode([String].self, forKey: .message) {
@@ -159,6 +161,14 @@ struct ServerMessage: Decodable {
         } else {
             text = (try? c.decode(String.self, forKey: .error)) ?? "Unknown error"
         }
+        // Validation details: {"errors":[{"path":["field"],"message":"..."}]}
+        if let fields = try? c.decode([FieldError].self, forKey: .errors), !fields.isEmpty {
+            text += ": " + fields.map { field in
+                let path = (field.path ?? []).compactMap { if case .string(let s) = $0 { s } else { nil } }.joined(separator: ".")
+                return path.isEmpty ? field.message : "\(path): \(field.message)"
+            }.joined(separator: "; ")
+        }
+        self.text = text
     }
 }
 

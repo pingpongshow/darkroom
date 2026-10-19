@@ -25,7 +25,7 @@ final class OrganizeUITests: XCTestCase {
     }
 
     private func go(_ app: XCUIApplication, _ sidebar: String) {
-        app.descendants(matching: .any)["sidebar-\(sidebar)"].firstMatch.click()
+        UITestSupport.sidebar(app, sidebar).click()
         sleep(1)
     }
 

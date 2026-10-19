@@ -50,7 +50,10 @@ struct LibraryShell: View {
                 }
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if library.showRightPanel && library.destination.showsGrid {
+                if library.showActivity, let album = library.currentAlbum {
+                    Divider().overlay(Theme.separator)
+                    ActivityPanel(album: album).frame(width: 280)
+                } else if library.showRightPanel && library.destination.showsGrid {
                     Divider().overlay(Theme.separator)
                     InfoPanel().frame(width: 280)
                 }
@@ -63,6 +66,11 @@ struct LibraryShell: View {
             }
         }
         .background(Theme.background)
+        .overlay {
+            if let request = library.slideshow {
+                SlideshowView(request: request).environmentObject(library)
+            }
+        }
         .focusedSceneObject(library)
         .sheet(item: $library.sheet) { sheet in
             LibrarySheetView(sheet: sheet).environmentObject(library)
@@ -87,11 +95,16 @@ struct LibraryShell: View {
     }
 
     @ViewBuilder private var content: some View {
-        if library.destination.showsGrid {
+        if library.destination == .locked && !library.lockedUnlocked {
+            LockedFolderGate()
+        } else if library.destination.showsGrid {
             switch library.mode {
             case .grid:
                 VStack(spacing: 0) {
                     if library.destination == .trash { TrashBar(timeline: library.timeline) }
+                    if let album = library.currentAlbum { AlbumHeader(album: album) }
+                    if library.destination == .photos { MemoriesStrip() }
+                    if case .folder(let path) = library.destination { FolderPathBar(path: path) }
                     ZStack(alignment: .trailing) {
                     GridView(timeline: library.timeline)
                     DateScrubber(timeline: library.timeline).frame(width: 64)
@@ -110,6 +123,12 @@ struct LibraryShell: View {
             case .people: PeopleView()
             case .places: PlacesView()
             case .map: LibraryMapView()
+            case .albums: AlbumsView()
+            case .tags: TagsView()
+            case .folders: FoldersView()
+            case .duplicates: DuplicatesView()
+            case .bursts: BurstsView()
+            case .sharing: SharingView()
             default: ComingSoonView(destination: library.destination)
             }
         }
@@ -130,6 +149,7 @@ struct LibraryShell: View {
         state.noteActivity()
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if mods.contains(.command), event.keyCode == 36 { library.startSlideshow(); return true } // ⌘↩
         if mods.contains(.command) {
             switch key {
             case "=", "+": zoom(1.25); return true
@@ -208,7 +228,7 @@ struct TopBar: View {
                 .lineLimit(1)
                 .accessibilityIdentifier("destination-title")
             if library.destination.showsGrid {
-                Text("\(timeline.totalCount) items").font(.caption).foregroundStyle(Theme.textTertiary)
+                Text("\(timeline.totalCount) \(timeline.totalCount == 1 ? "item" : "items")").font(.caption).foregroundStyle(Theme.textTertiary)
                     .accessibilityIdentifier("item-count")
             }
             Spacer()
@@ -259,7 +279,7 @@ struct SidebarView: View {
     private let sections: [(String, [LibraryDestination])] = [
         ("Library", [.photos, .explore, .map, .people, .places]),
         ("Collections", [.albums, .sharing, .favorites, .recentlyAdded, .recentlyEdited, .tags, .folders]),
-        ("Manage", [.archive, .locked, .duplicates, .trash]),
+        ("Manage", [.archive, .locked, .duplicates, .bursts, .largeFiles, .trash]),
     ]
 
     var body: some View {
@@ -282,10 +302,51 @@ struct SidebarView: View {
                         }
                     }
                 }
+                SidebarAlbums()
             }
             .padding(10)
         }
         .background(Theme.panel)
+    }
+}
+
+/// Recent albums in the sidebar: click to open, drop photos to add them.
+struct SidebarAlbums: View {
+    @EnvironmentObject var library: LibraryModel
+    @State private var targeted: String?
+
+    var body: some View {
+        let recent = library.recentAlbumIDs.compactMap { id in library.albums.first { $0.id == id } }
+        let shown = (recent + library.albums.filter { a in !recent.contains { $0.id == a.id } }).prefix(10)
+        if !shown.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Albums").panelHeader().padding(.horizontal, 10).padding(.bottom, 4)
+                ForEach(Array(shown), id: \.id) { album in
+                    Button { library.destination = .album(album.id) } label: {
+                        HStack(spacing: 6) {
+                            AlbumCover(album: album, size: 18)
+                            Text(album.albumName).lineLimit(1)
+                            Spacer()
+                            Text("\(album.assetCount)").font(.caption).foregroundStyle(Theme.textTertiary)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(
+                            targeted == album.id ? Theme.highlight.opacity(0.35)
+                            : (library.destination == .album(album.id) ? Theme.panelRaised : .clear)))
+                        .foregroundStyle(library.destination == .album(album.id) ? Theme.text : Theme.textSecondary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("sidebar-album-\(album.albumName)")
+                    .dropDestination(for: String.self) { items, _ in
+                        let ids = LibraryModel.droppedAssetIDs(items)
+                        guard !ids.isEmpty else { return false }
+                        library.add(ids, toAlbum: album)
+                        return true
+                    } isTargeted: { targeted = $0 ? album.id : (targeted == album.id ? nil : targeted) }
+                }
+            }
+        }
     }
 }
 

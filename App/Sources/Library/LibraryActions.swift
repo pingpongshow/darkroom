@@ -12,6 +12,9 @@ enum LibrarySheet: Identifiable {
     case tags([String])
     case geotag([String])
     case confirmEmptyTrash(Int)
+    case editAlbum(String)
+    case shareAlbum(String)
+    case sharedLink(albumID: String?, assetIDs: [String])
 
     var id: String {
         switch self {
@@ -22,6 +25,9 @@ enum LibrarySheet: Identifiable {
         case .tags: "tags"
         case .geotag: "geotag"
         case .confirmEmptyTrash: "emptyTrash"
+        case .editAlbum: "editAlbum"
+        case .shareAlbum: "shareAlbum"
+        case .sharedLink: "sharedLink"
         }
     }
 }
@@ -356,7 +362,15 @@ extension LibraryModel {
             entries.append(MenuEntry(title: "Remove from Album", symbol: "rectangle.stack.badge.minus", isEnabled: has) { [weak self] in
                 self?.removeFromCurrentAlbum()
             })
+            if let album = currentAlbum, isOwner(album) {
+                entries.append(MenuEntry(title: "Set as Album Cover", symbol: "photo.badge.checkmark", isEnabled: ids.count == 1) { [weak self] in
+                    self?.setAlbumCover()
+                })
+            }
         }
+        entries.append(MenuEntry(title: "Share by Link…", symbol: "link", isEnabled: has) { [weak self] in
+            self?.sheet = .sharedLink(albumID: nil, assetIDs: ids)
+        })
         entries.append(.separator)
         entries.append(MenuEntry(title: "Adjust Date & Time…", symbol: "calendar.badge.clock", key: "d", modifiers: [.command, .shift],
                                  isEnabled: has) { [weak self] in self?.sheet = .dateTime(ids) })

@@ -70,7 +70,7 @@ final class LibraryUITests: XCTestCase {
         XCTAssertTrue(player.waitForExistence(timeout: 10), "Space should play the motion")
         app.typeKey(.escape, modifierFlags: [])
 
-        app.descendants(matching: .any)["sidebar-Favorites"].firstMatch.click()
+        UITestSupport.sidebar(app, "Favorites").click()
         XCTAssertTrue(app.staticTexts["destination-title"].waitForExistence(timeout: 5))
         let favCount = app.staticTexts["item-count"]
         XCTAssertTrue(favCount.waitForExistence(timeout: 10))

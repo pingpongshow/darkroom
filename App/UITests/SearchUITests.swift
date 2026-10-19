@@ -54,12 +54,12 @@ final class SearchUITests: XCTestCase {
         try UITestSupport.signIn(app)
         XCTAssertTrue(cells(app).firstMatch.waitForExistence(timeout: 20))
 
-        app.descendants(matching: .any)["sidebar-Explore"].firstMatch.click()
+        UITestSupport.sidebar(app, "Explore").click()
         XCTAssertTrue(app.descendants(matching: .any)["explore-Videos"].firstMatch.waitForExistence(timeout: 10))
         sleep(3)
         UITestSupport.screenshot("m2-4-explore", in: self)
 
-        app.descendants(matching: .any)["sidebar-Places"].firstMatch.click()
+        UITestSupport.sidebar(app, "Places").click()
         let place = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'place-'")).firstMatch
         XCTAssertTrue(place.waitForExistence(timeout: 15), "Places should list cities")
         sleep(2)
@@ -69,7 +69,7 @@ final class SearchUITests: XCTestCase {
         sleep(1)
         UITestSupport.screenshot("m2-6-place-photos", in: self)
 
-        app.descendants(matching: .any)["sidebar-Map"].firstMatch.click()
+        UITestSupport.sidebar(app, "Map").click()
         XCTAssertTrue(app.staticTexts["map-count"].waitForExistence(timeout: 15))
         sleep(4)
         UITestSupport.screenshot("m2-7-map", in: self)
@@ -80,7 +80,7 @@ final class SearchUITests: XCTestCase {
         sleep(1)
         UITestSupport.screenshot("m2-8-map-selection", in: self)
 
-        app.descendants(matching: .any)["sidebar-People"].firstMatch.click()
+        UITestSupport.sidebar(app, "People").click()
         let person = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'person-'")).firstMatch
         let empty = app.descendants(matching: .any)["people-empty"]
         let deadline = Date().addingTimeInterval(15)
