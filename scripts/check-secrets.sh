@@ -29,6 +29,8 @@ report() { echo "✖ $1: $2" >&2; status=1; }
 
 for f in "${files[@]}"; do
   [[ -f "$f" ]] || continue
+  # Unmodified third-party code (verified against upstream checksums, see Vendor/*/VENDORED.txt).
+  [[ "$f" == Vendor/* ]] && continue
   # Skip binary files
   if ! grep -Iq . "$f" 2>/dev/null; then continue; fi
   content="$(git show ":$f" 2>/dev/null || cat "$f")"

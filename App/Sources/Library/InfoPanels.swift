@@ -270,7 +270,7 @@ struct InfoPanel: View {
     private func saveDescription() {
         guard let asset = details.asset, descriptionDraft != (asset.exifInfo?.description ?? "") else { return }
         let ids = [asset.id], text = descriptionDraft
-        library.perform("Description", ids: ids, change: .metadata(ids: ids)) { try await $0.setDescription(ids, text) }
+        library.perform("Description", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setDescription(ids, text) }
     }
 
     private func loadHistogram() async {

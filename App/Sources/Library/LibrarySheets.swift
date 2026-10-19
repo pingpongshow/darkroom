@@ -132,10 +132,10 @@ struct DateTimeSheet: View {
         switch mode {
         case .shift:
             let offset = offsetMinutes
-            library.perform("Adjust Date & Time", ids: ids, change: .metadata(ids: ids)) { try await $0.shiftDates(ids, byMinutes: offset) }
+            library.perform("Adjust Date & Time", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.shiftDates(ids, byMinutes: offset) }
         case .set:
             let date = exact, tz = TimeZone(identifier: zone) ?? .current
-            library.perform("Set Date & Time", ids: ids, change: .metadata(ids: ids)) { try await $0.setDate(ids, to: date, timeZone: tz) }
+            library.perform("Set Date & Time", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setDate(ids, to: date, timeZone: tz) }
         }
         Task { try? await Task.sleep(for: .seconds(2)); await library.timeline.reload() }
     }
@@ -187,7 +187,8 @@ struct MetadataSheet: View {
         let favorite: Bool? = favorite == 0 ? nil : favorite == 1
         let visibility: AssetVisibility? = archive == 0 ? nil : (archive == 1 ? .archive : .timeline)
         let tagNames = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        library.perform("Edit Metadata", ids: ids, change: .metadata(ids: ids)) { actions in
+        let touchesFile = description != nil || rating != nil || !tagNames.isEmpty
+        library.perform("Edit Metadata", ids: ids, change: .metadata(ids: ids), rewritesFiles: touchesFile) { actions in
             var undos: [UndoAction] = []
             if let description { undos.append(try await actions.setDescription(ids, description)) }
             if let rating { undos.append(try await actions.setRating(ids, rating)) }
@@ -339,7 +340,7 @@ struct TagsSheet: View {
     private func apply() {
         let ids = ids, chosen = Array(chosen)
         let typed = newTag.trimmingCharacters(in: .whitespaces)
-        library.perform("Add Tags", ids: ids, change: .metadata(ids: ids)) { actions in
+        library.perform("Add Tags", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { actions in
             var tagIDs = chosen
             if !typed.isEmpty, let leaf = try await actions.client.upsertTags(body: TagUpsertDto(tags: [typed])).first(where: { $0.value == typed }) {
                 tagIDs.append(leaf.id)

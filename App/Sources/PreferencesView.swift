@@ -6,6 +6,7 @@ struct PreferencesView: View {
     @AppStorage("showMemories", store: .darkRoom) private var showMemories = true
     @AppStorage("slideshowSeconds", store: .darkRoom) private var slideshowSeconds = 4.0
     @AppStorage("slideshowKenBurns", store: .darkRoom) private var kenBurns = true
+    @AppStorage("writeMetadataToFiles", store: .darkRoom) private var writeToFiles = true
 
     var body: some View {
         TabView {
@@ -15,6 +16,11 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Show memories above Photos", isOn: $showMemories)
+                Section("Metadata") {
+                    Toggle("Write date, location, description, rating and tags into the original files", isOn: $writeToFiles)
+                    Text("Changes are also kept in Immich. Rewritten files replace the originals in Immich; the previous file is kept hidden so phones don’t upload it again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Slideshow (⌘↩)") {
                     Stepper("\(Int(slideshowSeconds)) seconds per photo", value: $slideshowSeconds, in: 2...30)
                     Toggle("Slow zoom (Ken Burns)", isOn: $kenBurns)
@@ -45,6 +51,6 @@ struct PreferencesView: View {
             .tabItem { Label("Accounts", systemImage: "person.2") }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 380)
+        .frame(width: 520, height: 460)
     }
 }

@@ -69,7 +69,7 @@ extension LibraryModel {
     // MARK: Running actions with undo
 
     /// Runs an action, applies its effect locally, and registers ⌘Z / ⇧⌘Z.
-    func perform(_ label: String, ids: [String], change: AssetChange?,
+    func perform(_ label: String, ids: [String], change: AssetChange?, rewritesFiles: Bool = false,
                  _ operation: @escaping @Sendable (AssetActions) async throws -> UndoAction) {
         guard !ids.isEmpty else { return }
         let actions = self.actions
@@ -77,7 +77,8 @@ extension LibraryModel {
             do {
                 let undo = try await operation(actions)
                 apply(change)
-                registerUndo(undo, redo: (label, ids, change, operation))
+                if rewritesFiles { rewrites.schedule(ids) }
+                registerUndo(undo, redo: (label, ids, change, operation), rewritesFiles: rewritesFiles)
                 flash("\(label): \(ids.count == 1 ? "1 item" : "\(ids.count) items")")
             } catch {
                 flash("\(label) failed: \(error.localizedDescription)", isError: true)
@@ -86,11 +87,14 @@ extension LibraryModel {
     }
 
     private func registerUndo(_ undo: UndoAction,
-                              redo: (String, [String], AssetChange?, @Sendable (AssetActions) async throws -> UndoAction)) {
+                              redo: (String, [String], AssetChange?, @Sendable (AssetActions) async throws -> UndoAction),
+                              rewritesFiles: Bool) {
         guard let undoManager else { return }
         undoManager.registerUndo(withTarget: self) { model in
             Task { @MainActor in
                 do {
+                    // If the change was already written into the files, swap the old files back first.
+                    if rewritesFiles { for id in redo.1 { _ = await model.rewrites.revert(id) } }
                     try await undo.run()
                     await model.refreshAfterUndo(ids: redo.1)
                     model.flash("Undo \(undo.name)")
@@ -100,7 +104,7 @@ extension LibraryModel {
             }
             // Redo runs the original action again.
             model.undoManager?.registerUndo(withTarget: model) { model in
-                model.perform(redo.0, ids: redo.1, change: redo.2, redo.3)
+                model.perform(redo.0, ids: redo.1, change: redo.2, rewritesFiles: rewritesFiles, redo.3)
             }
             model.undoManager?.setActionName(undo.name)
         }
@@ -168,7 +172,7 @@ extension LibraryModel {
 
     func setRating(_ rating: Int) {
         let ids = targetIDs
-        perform(rating == 0 ? "Clear Rating" : "Rate \(rating)★", ids: ids, change: .metadata(ids: ids)) { try await $0.setRating(ids, rating) }
+        perform(rating == 0 ? "Clear Rating" : "Rate \(rating)★", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setRating(ids, rating) }
     }
 
     func setVisibility(_ visibility: AssetVisibility) {
@@ -243,7 +247,7 @@ extension LibraryModel {
 
     func setLocation(latitude: Double, longitude: Double, ids: [String]? = nil) {
         let ids = ids ?? targetIDs
-        perform("Set Location", ids: ids, change: .metadata(ids: ids)) { try await $0.setLocation(ids, latitude: latitude, longitude: longitude) }
+        perform("Set Location", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setLocation(ids, latitude: latitude, longitude: longitude) }
     }
 
     func emptyTrash() {

@@ -158,11 +158,12 @@ public struct VersionManager: Sendable {
         if !context.builtInEdits.isEmpty { try? await client.removeAssetEdits(id: original.id) }
 
         // Only ever original + latest version: the previous Mac version goes to Immich's trash.
-        if let old = context.version {
-            try? await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [old.id]))
-            registry.remove(versionID: old.id)
-        }
+        // Update the registry first so the reconciler never treats this deliberate trash as an outside removal.
         registry.add(VersionRegistry.Entry(versionID: versionID, originalID: original.id, hidden: hidden))
+        if let old = context.version {
+            registry.remove(versionID: old.id)
+            try? await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [old.id]))
+        }
         return .version(versionID)
     }
 
@@ -176,9 +177,9 @@ public struct VersionManager: Sendable {
         if !record.stackMembers.isEmpty {
             _ = try? await client.createStack(body: StackCreateDto(assetIds: [record.originalID] + record.stackMembers))
         }
+        registry.remove(versionID: version.id)
         try await client.deleteAssets(body: AssetBulkDeleteDto(force: false, ids: [version.id]))
         try? await client.deleteAssetMetadata(id: record.originalID, key: Self.versionKey)
-        registry.remove(versionID: version.id)
     }
 
     /// Copies description, rating, date/time zone, location and tags (things `PUT /assets/copy` doesn't).
@@ -362,6 +363,8 @@ public struct Reconciler: Sendable {
             let version = try? await client.getAssetInfo(id: entry.versionID)
             if version == nil || version?.isTrashed == true {
                 for (id, visibility) in entry.hidden {
+                    // Only originals that are still hidden need restoring.
+                    guard let info = try? await client.getAssetInfo(id: id), info.visibility == .hidden else { continue }
                     try? await client.updateAssets(body: AssetBulkUpdateDto(ids: [id], visibility: AssetVisibility(rawValue: visibility)))
                     actions.append(.unhidOriginal(id))
                 }

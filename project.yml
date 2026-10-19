@@ -28,6 +28,9 @@ targets:
       - path: App/Sources
       - path: App/Resources
         buildPhase: resources
+      - path: Vendor/exiftool
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: DarkRoomKit
         product: ImmichAPI

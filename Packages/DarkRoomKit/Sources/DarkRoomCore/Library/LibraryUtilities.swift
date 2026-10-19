@@ -21,6 +21,20 @@ public enum LibraryUtilities {
         return results.sorted { $0.createdAt > $1.createdAt }.prefix(limit).map(TimelineAsset.init)
     }
 
+    /// DarkRoom's edited versions (`<name>-edit.<ext>`), most recently saved first.
+    public static func recentlyEdited(_ client: ImmichClient, limit: Int = 500) async throws -> [TimelineAsset] {
+        var results: [AssetResponseDto] = []
+        var page = 1
+        while results.count < limit {
+            let response = try await client.searchAssets(body: MetadataSearchDto(originalFileName: "-edit.", page: page, size: 250,
+                                                                                withExif: true, withStacked: true))
+            results += response.assets.items.filter { $0.originalFileName.contains("-edit.") && !$0.isTrashed }
+            guard let next = response.assets.nextPage.flatMap(Int.init), next > page else { break }
+            page = next
+        }
+        return results.sorted { $0.createdAt > $1.createdAt }.prefix(limit).map(TimelineAsset.init)
+    }
+
     /// Largest files first (photos and videos), for freeing up space.
     public static func largeFiles(_ client: ImmichClient, limit: Int = 250) async throws -> [AssetResponseDto] {
         // `orderBy` can't be combined with the deprecated `page` / `order` fields.

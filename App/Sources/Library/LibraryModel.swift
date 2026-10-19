@@ -71,7 +71,7 @@ enum LibraryDestination: Hashable {
     /// Whether the destination shows a photo grid (timeline or a fixed result set).
     var showsGrid: Bool {
         switch self {
-        case .search, .mapSelection, .recentlyAdded, .largeFiles, .folder, .locked: true
+        case .search, .mapSelection, .recentlyAdded, .recentlyEdited, .largeFiles, .folder, .locked: true
         default: timelineQuery != nil
         }
     }
@@ -128,6 +128,8 @@ final class LibraryModel: ObservableObject {
         return model
     }
     private var developModel: DevelopModel?
+    /// Writes metadata changes into the files (original + Mac version).
+    lazy var rewrites = FileRewriteQueue(library: self)
     @Published var selection: Set<String> = []
     @Published var focusedAssetID: String?
     @Published var showLeftPanel = true
@@ -190,6 +192,7 @@ final class LibraryModel: ObservableObject {
         loadRemainingInBackground(timeline)
         startLiveUpdates()
         Task.detached(priority: .background) { [pipeline] in await pipeline.trimDiskCache() }
+        Task { await reconcile() }
     }
 
     func stop() {
@@ -248,6 +251,11 @@ final class LibraryModel: ObservableObject {
             let client = self.client
             return TimelineStore(client: client, groupByMonth: false, flatTitle: "Uploaded in the last 30 days") {
                 try await LibraryUtilities.recentlyAdded(client)
+            }
+        case .recentlyEdited:
+            let client = self.client
+            return TimelineStore(client: client, groupByMonth: false, flatTitle: "Edited in DarkRoom, newest first") {
+                try await LibraryUtilities.recentlyEdited(client)
             }
         case .largeFiles:
             let client = self.client
@@ -351,6 +359,19 @@ final class LibraryModel: ObservableObject {
         mode = (mode == target && target != .grid) ? .grid : target
     }
 
+    // MARK: Versions safety net
+
+    func isRegisteredVersion(_ id: String) -> Bool { develop.versions.registry.all.contains { $0.versionID == id } }
+
+    /// Un-hides originals whose version was removed elsewhere, re-hides originals something un-hid.
+    func reconcile() async {
+        let actions = await Reconciler(client: client, registry: develop.versions.registry).run()
+        guard !actions.isEmpty else { return }
+        let restored = actions.filter { if case .unhidOriginal = $0 { true } else { false } }.count
+        if restored > 0 { flash("Restored \(restored) original\(restored == 1 ? "" : "s") whose edited version was removed in Immich") }
+        await timeline.reload()
+    }
+
     // MARK: Live updates (changes made in Immich web / phones appear immediately)
 
     private func startLiveUpdates() {
@@ -372,8 +393,13 @@ final class LibraryModel: ObservableObject {
             await loadAlbums()
         case .assetUpdate(let id), .assetEditReady(let id):
             await timeline.refresh(assetIDs: [id])
+        case .assetTrash(let ids) where ids.contains(where: isRegisteredVersion):
+            await reconcile()
+            if destination != .trash { timeline.remove(Set(ids)) } else { await timeline.reload() }
         case .assetTrash(let ids):
             if destination != .trash { timeline.remove(Set(ids)) } else { await timeline.reload() }
+        case .assetDelete(let id) where isRegisteredVersion(id):
+            await reconcile()
         case .assetDelete(let id), .assetHidden(let id):
             timeline.remove([id])
         case .sessionDelete:

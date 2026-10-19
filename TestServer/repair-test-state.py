@@ -33,6 +33,19 @@ for i in seeded:
     if isinstance(edits, dict) and edits.get("edits"):
         req("DELETE", f"/assets/{i}/edits", token=token); print("removed built-in edits", a["originalFileName"])
 
+# Seeded Live Photo stills must stay linked to a hidden motion clip (matched by file name stem).
+for key in [k for k in seed if k.startswith("live")]:
+    for i in seed[key]:
+        a = req("GET", f"/assets/{i}", token=token)
+        if a.get("type") != "IMAGE" or a.get("livePhotoVideoId"):
+            continue
+        stem = a["originalFileName"].rsplit(".", 1)[0]
+        found = req("POST", "/search/metadata", {"originalFileName": stem, "type": "VIDEO", "visibility": "hidden", "size": 20}, token)
+        motions = [m for m in found["assets"]["items"] if not m.get("isTrashed")]
+        if motions:
+            req("PUT", f"/assets/{i}", {"livePhotoVideoId": motions[0]["id"]}, token)
+            print("relinked live photo", a["originalFileName"])
+
 # Test versions: "-edit." files (including trashed ones).
 found = req("POST", "/search/metadata", {"originalFileName": "-edit.", "withDeleted": True, "size": 200}, token)["assets"]["items"]
 ids = [a["id"] for a in found if "-edit." in a["originalFileName"]]

@@ -1,0 +1,3 @@
+ExifTool 13.59 by Phil Harvey (https://exiftool.org), unmodified.
+Licence: same terms as Perl itself (Artistic License or GPL). SHA-256 of Image-ExifTool-13.59.tar.gz:
+668ea3acececb7235fbd0f4900e72d5f12c9b07e5c778fd36cb1e9b5828fd65a
