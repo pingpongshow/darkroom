@@ -77,14 +77,15 @@ final class DevelopModel: ObservableObject {
             let context = try await versions.context(for: assetID)
             guard self.assetID == assetID else { return }
             self.context = context
-            canEdit = context.original.ownerId == library.session.account.userID
+            canEdit = context.original.ownerId == library.session.account.userID && context.original.type != .video
             status = "Downloading original…"
             let file = try await originals.file(for: context.original)
             guard self.assetID == assetID else { return }
             originalFile = file
             isRAW = RenderEngine.isRAW(file)
             rawNeutral = engine.rawNeutral(file)
-            status = canEdit ? nil : "View only: only your own photos can be edited"
+            status = canEdit ? nil : (context.original.type == .video
+                ? "Videos can be rotated from the Photo menu" : "View only: only your own photos can be edited")
             committed = context.recipe
             recipe = context.recipe
             dirty = false

@@ -377,6 +377,18 @@ extension LibraryModel {
             self?.sheet = .sharedLink(albumID: nil, assetIDs: ids)
         })
         entries.append(.separator)
+        entries.append(MenuEntry(title: "Rotate Left", symbol: "rotate.left", key: .leftArrow, modifiers: [.command, .option], isEnabled: has) { [weak self] in
+            self?.rotateSelection(-1)
+        })
+        entries.append(MenuEntry(title: "Rotate Right", symbol: "rotate.right", key: .rightArrow, modifiers: [.command, .option], isEnabled: has) { [weak self] in
+            self?.rotateSelection(1)
+        })
+        if assets.contains(where: \.isLivePhoto) {
+            entries.append(MenuEntry(title: "Make Still", symbol: "livephoto.slash", key: "m", modifiers: [.command, .shift, .option]) { [weak self] in
+                self?.makeStill()
+            })
+        }
+        entries.append(.separator)
         entries.append(MenuEntry(title: "Adjust Date & Time…", symbol: "calendar.badge.clock", key: "d", modifiers: [.command, .shift],
                                  isEnabled: has) { [weak self] in self?.sheet = .dateTime(ids) })
         entries.append(MenuEntry(title: "Edit Metadata…", symbol: "pencil", key: "m", modifiers: [.command, .shift],
@@ -443,7 +455,12 @@ extension MenuEntry {
         item.isEnabled = isEnabled
         item.state = isChecked ? .on : .off
         if let key {
-            item.keyEquivalent = key == .delete ? "\u{8}" : String(key.character)
+            switch key {
+            case .delete: item.keyEquivalent = "\u{8}"
+            case .leftArrow: item.keyEquivalent = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
+            case .rightArrow: item.keyEquivalent = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+            default: item.keyEquivalent = String(key.character)
+            }
             var mask: NSEvent.ModifierFlags = []
             if modifiers.contains(.command) { mask.insert(.command) }
             if modifiers.contains(.shift) { mask.insert(.shift) }

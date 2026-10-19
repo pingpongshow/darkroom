@@ -354,6 +354,13 @@ final class LibraryModel: ObservableObject {
     }
 
     func toggleMode(_ target: ViewMode) {
+        if target == .develop {
+            let id = focusedAssetID ?? selection.first ?? orderedAssets.first?.id
+            if let id, timeline.asset(id)?.isVideo == true {
+                flash("Videos can be rotated: Photo ▸ Rotate Left / Right (⌥⌘← / ⌥⌘→)")
+                return
+            }
+        }
         if target == .loupe || target == .develop, focusedAssetID == nil {
             focusedAssetID = selection.first ?? orderedAssets.first?.id
         }

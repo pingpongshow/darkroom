@@ -324,3 +324,47 @@ extension LibraryModel {
         }
     }
 }
+
+// MARK: Rotate (photos: Immich built-in edit or version; videos: lossless) and Make Still
+
+extension LibraryModel {
+    /// Rotates the selected items by quarter turns (+1 = right / clockwise).
+    func rotateSelection(_ delta: Int) {
+        let ids = targetIDs
+        guard !ids.isEmpty else { return }
+        let develop = self.develop
+        Task {
+            var done = 0
+            for id in ids {
+                statusMessage = "Rotating \(done + 1) of \(ids.count)…"
+                do {
+                    let context = try await develop.versions.context(for: id)
+                    var recipe = context.recipe
+                    recipe.geometry.quarterTurns = (((recipe.geometry.quarterTurns + delta) % 4) + 4) % 4
+                    let file = try await develop.originals.file(for: context.original)
+                    _ = try await develop.versions.save(recipe, context: context, originalFile: file,
+                                                        isLivePhoto: context.original.livePhotoVideoId != nil)
+                    done += 1
+                } catch {
+                    flash("Couldn’t rotate: \(error.localizedDescription)", isError: true)
+                }
+            }
+            flash("Rotated \(done) item\(done == 1 ? "" : "s")")
+            await pipeline.invalidate(assetID: ids[0])
+            await timeline.reload()
+            detailsRevision += 1
+        }
+    }
+
+    /// Make Still: keeps the photo, sends the motion clip to Immich's trash (undoable).
+    func makeStill() {
+        let ids = targetAssets.filter(\.isLivePhoto).map(\.id)
+        guard !ids.isEmpty else { return }
+        perform("Make Still", ids: ids, change: .metadata(ids: ids)) { actions in
+            var undos: [UndoAction] = []
+            for id in ids { undos.append(try await actions.makeStill(id)) }
+            let steps = undos
+            return UndoAction(name: "Make Still") { for u in steps.reversed() { try await u.run() } }
+        }
+    }
+}
