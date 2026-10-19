@@ -11,7 +11,7 @@ enum UITestSupport {
         return (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap { try? JSONDecoder().decode(Credentials.self, from: $0) }
     }
 
-    static func launch() -> XCUIApplication {
+    static func launch(extraEnvironment: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["DARKROOM_DATA_DIR"] = FileManager.default.temporaryDirectory
             .appending(path: "darkroom-ui-\(UUID().uuidString)").path
@@ -20,6 +20,7 @@ enum UITestSupport {
         app.launchEnvironment["DARKROOM_DISCOVERY_CANDIDATES"] = "http://127.0.0.1:9,http://localhost:2283"
         // Ignore saved window frames so every run gets the default (larger) window.
         app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
+        for (k, v) in extraEnvironment { app.launchEnvironment[k] = v }
         app.launch()
         return app
     }

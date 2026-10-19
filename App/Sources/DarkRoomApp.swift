@@ -27,6 +27,7 @@ struct DarkRoomApp: App {
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                     .disabled(state.session == nil)
             }
+            CommandGroup(replacing: .importExport) { FileCommands() }
             CommandMenu("Photo") { PhotoCommands() }
             CommandGroup(after: .sidebar) { ViewCommands() }
         }
@@ -44,13 +45,20 @@ extension Notification.Name {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let services = ServicesProvider()
+
     func application(_ application: NSApplication, open urls: [URL]) {
-        NotificationCenter.default.post(name: .openPresetFiles, object: urls)
+        let presets = urls.filter { ["darkroom-preset", "xmp", "cube", "lrtemplate"].contains($0.pathExtension.lowercased()) }
+        if !presets.isEmpty { NotificationCenter.default.post(name: .openPresetFiles, object: presets) }
+        let media = urls.filter { !presets.contains($0) }
+        if !media.isEmpty { NotificationCenter.default.post(name: .importFiles, object: media) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         RenderEngine.exiftoolURL = Bundle.main.url(forResource: "exiftool", withExtension: nil, subdirectory: "exiftool")
+        NSApp.servicesProvider = services
+        NSUpdateDynamicServices()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -108,5 +116,17 @@ struct ViewCommands: View {
             .keyboardShortcut("[", modifiers: .command)
             .disabled(library?.canGoBack != true)
         Divider()
+    }
+}
+
+struct FileCommands: View {
+    @FocusedObject private var library: LibraryModel?
+    var body: some View {
+        Button("Import…") { library?.importer.choose() }.keyboardShortcut("i", modifiers: [.command, .shift]).disabled(library == nil)
+        Button("Import Presets & Profiles…") { library?.importPresetsWithPanel() }.disabled(library == nil)
+        Button("Retry Failed Uploads") { library?.importer.retry() }.disabled(library == nil)
+        Divider()
+        Button("Export…") { if let l = library { l.sheet = .export(l.targetIDs) } }
+            .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(library?.targetIDs.isEmpty != false)
     }
 }

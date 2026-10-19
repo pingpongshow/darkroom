@@ -52,6 +52,9 @@ struct PreferencesView: View {
 
             EditorsPreferences()
                 .tabItem { Label("Editors", systemImage: "arrow.up.forward.app") }
+
+            ImportPreferences()
+                .tabItem { Label("Import", systemImage: "square.and.arrow.down") }
         }
         .formStyle(.grouped)
         .frame(width: 520, height: 460)
@@ -85,4 +88,29 @@ struct EditorsPreferences: View {
         }
         .task { editors = CompanionEditor.installed() }
     }
+}
+
+/// Watched folders: anything new in them uploads automatically.
+struct ImportPreferences: View {
+    @State private var folders: [String] = UserDefaults.darkRoom.stringArray(forKey: "watchedFolders") ?? []
+    var body: some View {
+        Form {
+            Section("Watched folders") {
+                if folders.isEmpty { Text("None. New photos and videos added to a watched folder upload automatically.").foregroundStyle(.secondary) }
+                ForEach(folders, id: \.self) { folder in
+                    HStack {
+                        Text(folder).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button { folders.removeAll { $0 == folder }; save() } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
+                    }
+                }
+                Button("Add Folder…") {
+                    let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+                    if panel.runModal() == .OK, let url = panel.url { folders.append(url.path); save() }
+                }
+            }
+            Text("Files on disk are never changed, moved or deleted.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func save() { UserDefaults.darkRoom.set(folders, forKey: "watchedFolders") }
 }

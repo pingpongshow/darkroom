@@ -64,6 +64,8 @@ struct LibraryShell: View {
                     InfoPanel().frame(width: 280)
                 }
             }
+            CardBanner(model: library.importer)
+            ImportProgressBar(model: library.importer)
             EditSessionsBar(model: library.editIn)
             if let message = library.statusMessage {
                 Text(message).font(.caption).foregroundStyle(Theme.textSecondary)
@@ -102,14 +104,21 @@ struct LibraryShell: View {
             if let urls = note.object as? [URL] { library.importPresetFiles(urls) }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            // Preset / LUT files import as presets; photos, videos and folders open the import review.
             let presetExtensions: Set<String> = ["darkroom-preset", "xmp", "cube", "lrtemplate"]
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url, presetExtensions.contains(url.pathExtension.lowercased()) else { return }
-                    Task { @MainActor in library.importPresetFiles([url]) }
+                    guard let url else { return }
+                    Task { @MainActor in
+                        if presetExtensions.contains(url.pathExtension.lowercased()) { library.importPresetFiles([url]) }
+                        else { library.importer.scan([url]) }
+                    }
                 }
             }
             return true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .importFiles)) { note in
+            if let urls = note.object as? [URL] { library.importer.scan(urls) }
         }
         .onAppear { library.undoManager = undoManager }
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
@@ -324,6 +333,8 @@ struct TopBar: View {
                     Slider(value: $library.gridCellSize, in: 90...480).frame(width: 110).help("Thumbnail size (⌘+ / ⌘−)")
                 }
             }
+            Button { library.importer.choose() } label: { Image(systemName: "square.and.arrow.down") }
+                .buttonStyle(.borderless).help("Import (⇧⌘I)").accessibilityIdentifier("import-button")
             Button { library.showRightPanel.toggle() } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(.borderless).help("Info panel (Tab)")
             Menu {
@@ -424,6 +435,17 @@ struct SidebarAlbums: View {
                         library.add(ids, toAlbum: album)
                         return true
                     } isTargeted: { targeted = $0 ? album.id : (targeted == album.id ? nil : targeted) }
+                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                        // Files from Finder: import straight into this album.
+                        var urls: [URL] = []
+                        let group = DispatchGroup()
+                        for p in providers {
+                            group.enter()
+                            _ = p.loadObject(ofClass: URL.self) { url, _ in if let url { urls.append(url) }; group.leave() }
+                        }
+                        group.notify(queue: .main) { library.importer.scan(urls, album: album) }
+                        return true
+                    }
                 }
             }
         }

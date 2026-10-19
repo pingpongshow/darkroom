@@ -64,6 +64,31 @@
 	<string>DarkRoom connects to your Immich server on your local network.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Upload to Immich with DarkRoom</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>uploadFiles</string>
+			<key>NSPortName</key>
+			<string>DarkRoom</string>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSTextContent</key>
+				<string>FilePath</string>
+			</dict>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.movie</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

@@ -15,6 +15,10 @@ enum LibrarySheet: Identifiable {
     case editAlbum(String)
     case shareAlbum(String)
     case sharedLink(albumID: String?, assetIDs: [String])
+    case importReview
+    case export([String])
+    case shortcuts
+    case tour
 
     var id: String {
         switch self {
@@ -28,6 +32,10 @@ enum LibrarySheet: Identifiable {
         case .editAlbum: "editAlbum"
         case .shareAlbum: "shareAlbum"
         case .sharedLink: "sharedLink"
+        case .importReview: "import"
+        case .export: "export"
+        case .shortcuts: "shortcuts"
+        case .tour: "tour"
         }
     }
 }

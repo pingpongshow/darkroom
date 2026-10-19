@@ -62,6 +62,12 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             CFBundleTypeExtensions: [xmp, cube, lrtemplate]
+        NSServices:
+          - NSMenuItem: { default: Upload to Immich with DarkRoom }
+            NSMessage: uploadFiles
+            NSPortName: DarkRoom
+            NSRequiredContext: { NSTextContent: FilePath }
+            NSSendFileTypes: [public.image, public.movie, public.folder]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSPrincipalClass: NSApplication

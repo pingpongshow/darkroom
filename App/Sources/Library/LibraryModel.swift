@@ -132,6 +132,8 @@ final class LibraryModel: ObservableObject {
     lazy var rewrites = FileRewriteQueue(library: self)
     /// "Edit in…" companion-app sessions.
     lazy var editIn = EditInModel(library: self)
+    /// Import (file picker, drops, cards, watched folders).
+    lazy var importer = ImportModel(library: self)
     @Published var selection: Set<String> = []
     @Published var focusedAssetID: String?
     @Published var showLeftPanel = true
@@ -191,6 +193,7 @@ final class LibraryModel: ObservableObject {
 
     func start() async {
         Task { await loadAlbums() }
+        _ = importer   // resumes unfinished imports, starts watched folders and card detection
         await timeline.reload()
         loadRemainingInBackground(timeline)
         startLiveUpdates()

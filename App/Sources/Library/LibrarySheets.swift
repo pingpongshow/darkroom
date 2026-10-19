@@ -20,6 +20,8 @@ struct LibrarySheetView: View {
         case .editAlbum(let id): EditAlbumSheet(albumID: id)
         case .shareAlbum(let id): ShareAlbumSheet(albumID: id)
         case .sharedLink(let albumID, let ids): SharedLinkSheet(albumID: albumID, assetIDs: ids)
+        case .importReview: ImportSheet(model: library.importer)
+        case .export, .shortcuts, .tour: EmptyView()
         }
     }
 }
