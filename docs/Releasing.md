@@ -1,9 +1,9 @@
 # Releasing DarkRoom
 
-Source stays in this private repo. Signed, notarized DMGs and the Sparkle update feed are published to the
-public releases-only repo **pingpongshow/darkroom-releases** (DMGs, `appcast.xml`, release notes; never source
-or personal data). The app's feed URL is
-`https://github.com/pingpongshow/darkroom-releases/releases/latest/download/appcast.xml`.
+Signed, notarized DMGs and the Sparkle update feed are published as GitHub releases of this (public) repo.
+Each release carries the DMG and `appcast.xml`; the app's feed URL is
+`https://github.com/pingpongshow/darkroom/releases/latest/download/appcast.xml`.
+Never put personal data in release notes.
 
 ## One-time setup (on the release Mac)
 
@@ -19,8 +19,7 @@ or personal data). The app's feed URL is
    login keychain; back it up (`generate_keys -x sparkle-private-key`) somewhere safe and offline.
    Put the printed **public** key in `project.yml` as `SPARKLE_PUBLIC_KEY`. Until it is set, update checks are
    disabled in the app.
-4. **Releases repo.** Create the public repo `pingpongshow/darkroom-releases` (README only) and sign in with
-   `gh auth login`.
+4. **GitHub.** The repo must be public so the app can download updates anonymously. Sign in with `gh auth login`.
 
 ## Each release
 
@@ -39,6 +38,6 @@ signs the update with Sparkle's EdDSA key, prepends an item to the appcast, and 
 ## CI (optional)
 
 `.github/workflows/release.yml` runs the same script on a tag push (`v*`). It needs these repository secrets in
-the **private** repo: `DEVELOPER_ID_P12` (base64 certificate export), `DEVELOPER_ID_P12_PASSWORD`,
-`DEVELOPER_ID`, `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_PASSWORD`, `SPARKLE_PRIVATE_KEY`,
-`RELEASES_TOKEN` (fine-grained token with *contents: write* on the releases repo only).
+the repo: `DEVELOPER_ID_P12` (base64 certificate export), `DEVELOPER_ID_P12_PASSWORD`,
+`DEVELOPER_ID`, `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_PASSWORD`, `SPARKLE_PRIVATE_KEY`.
+Publishing uses the workflow's own token.

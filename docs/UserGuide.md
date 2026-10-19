@@ -67,7 +67,7 @@ JPEG, HEIC, PNG, TIFF or original; size, quality, colour space, metadata (all / 
 
 ## Updates
 
-DarkRoom ▸ Check for Updates… (and automatic daily checks). Updates are signed and notarized, and come from the public DarkRoom releases page.
+DarkRoom ▸ Check for Updates… (and automatic daily checks). Updates are signed and notarized, and come from the DarkRoom GitHub releases page.
 
 ## Privacy
 

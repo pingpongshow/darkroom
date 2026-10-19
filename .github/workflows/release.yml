@@ -9,7 +9,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -42,7 +42,7 @@ jobs:
         env:
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           NOTARY_PROFILE: darkroom-notary
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"

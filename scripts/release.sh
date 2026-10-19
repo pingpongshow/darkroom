@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Builds a Developer ID signed, notarized DarkRoom DMG and publishes it (with a signed Sparkle
-# appcast entry) to the public releases-only repo. Source never leaves the private repo.
+# Builds a Developer ID signed, notarized DarkRoom DMG and publishes it, with a signed Sparkle
+# appcast entry, as a GitHub release of this repo.
 #
 # Needs (see Docs/Releasing.md):
 #   DEVELOPER_ID      "Developer ID Application: … (TEAMID)" signing identity in the keychain
 #   NOTARY_PROFILE    notarytool keychain profile (xcrun notarytool store-credentials)
 #   SPARKLE_KEY_FILE  optional: EdDSA private key file (default: the key in the login keychain)
-#   gh                signed in with access to pingpongshow/darkroom-releases
+#   gh                signed in with access to pingpongshow/darkroom
 # Usage: scripts/release.sh 0.2.0 [--dry-run]
 set -euo pipefail
 version="${1:?usage: release.sh <version> [--dry-run]}"
 dry_run="${2:-}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-releases_repo="pingpongshow/darkroom-releases"
+releases_repo="pingpongshow/darkroom"
 work="$(mktemp -d "${TMPDIR:-/tmp}/darkroom-release.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 : "${DEVELOPER_ID:?set DEVELOPER_ID}"
