@@ -102,6 +102,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: state.phase)
+        .sheet(isPresented: Binding(get: { state.localNetworkBlocked != nil }, set: { if !$0 { state.localNetworkBlocked = nil } })) {
+            if let server = state.localNetworkBlocked { LocalNetworkSheet(server: server).environmentObject(state) }
+        }
     }
 }
 

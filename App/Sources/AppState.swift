@@ -35,6 +35,8 @@ final class AppState: ObservableObject {
     }
     @AppStorage("autoLockMinutes", store: .darkRoom) var autoLockMinutes: Int = 15
     @AppStorage("lockOnSleep", store: .darkRoom) var lockOnSleep: Bool = true
+    /// A server macOS's Local Network setting keeps DarkRoom from reaching (shows how to allow it).
+    @Published var localNetworkBlocked: URL?
 
     let accounts: AccountManager
     private var observers: [NSObjectProtocol] = []
@@ -54,6 +56,38 @@ final class AppState: ObservableObject {
         phase = accounts.accounts.isEmpty ? .signIn(prefillAccount: nil) : .picker
         applyAppearance()
         observeLocking()
+        observeLocalNetwork()
+        let servers = Array(Set(accounts.accounts.map(\.serverURL)))
+        Task { await checkLocalNetwork(servers) }
+    }
+
+    // MARK: Local Network permission
+
+    /// Tests the servers against macOS's Local Network setting (asking the user the first time). Shows the
+    /// how-to sheet for a blocked server and closes it once access works.
+    func checkLocalNetwork(_ servers: [URL]) async {
+        for server in servers {
+            switch await LocalNetworkAccess.check(server) {
+            case .denied:
+                localNetworkBlocked = server
+                return
+            case .allowed where localNetworkBlocked == server:
+                localNetworkBlocked = nil
+            default:
+                break
+            }
+        }
+    }
+
+    /// Back from System Settings: check again so the sheet goes away as soon as access is allowed.
+    private func observeLocalNetwork() {
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let server = self.localNetworkBlocked else { return }
+                Task { await self.checkLocalNetwork([server]) }
+            }
+        })
     }
 
     func applyAppearance() {

@@ -254,6 +254,9 @@ struct SignInView: View {
                 error = "Incorrect email or password."
             } catch {
                 self.error = error.localizedDescription
+                // "Offline" is often macOS's Local Network setting blocking the server.
+                let address = server.contains("://") ? server : "http://\(server)"
+                if let url = URL(string: address.trimmingCharacters(in: .whitespaces)) { await state.checkLocalNetwork([url]) }
             }
         }
     }
