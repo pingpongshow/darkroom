@@ -244,7 +244,11 @@ struct EyedropperOverlay: View {
 struct CropEditor: View {
     @ObservedObject var develop: DevelopModel
     let size: CGSize
-    @State private var draft: EditRecipe.CropRect = .full
+    /// The crop box being drawn; kept in the model so Save and leaving the editor apply it too.
+    private var draft: EditRecipe.CropRect {
+        get { develop.cropDraft }
+        nonmutating set { develop.cropDraft = newValue }
+    }
     @State private var dragStart: EditRecipe.CropRect?
     @State private var overlay = 0
 
@@ -310,7 +314,6 @@ struct CropEditor: View {
             .controlSize(.small)
             .padding(.horizontal, 12).padding(.bottom, 8)
         }
-        .onAppear { draft = develop.recipe.geometry.crop ?? .full }
     }
 
     private func fitted(_ image: CGImage, in container: CGSize) -> CGRect {
@@ -376,11 +379,7 @@ struct CropEditor: View {
         draft = .init(x: min(max(0, cx - w / 2), 1 - w), y: min(max(0, cy - h / 2), 1 - h), width: w, height: h)
     }
 
-    private func apply() {
-        let crop = draft
-        develop.set { $0.geometry.crop = crop == .full ? nil : crop }
-        develop.cropping = false
-    }
+    private func apply() { develop.applyPendingCrop() }
 
     enum Corner: CaseIterable {
         case topLeft, topRight, bottomLeft, bottomRight

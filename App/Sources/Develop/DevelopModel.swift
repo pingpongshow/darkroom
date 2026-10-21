@@ -21,7 +21,14 @@ final class DevelopModel: ObservableObject {
     @Published private(set) var isSaving = false
     @Published private(set) var error: String?
     @Published var showBefore = false { didSet { scheduleRender() } }
-    @Published var cropping = false { didSet { scheduleRender() } }
+    @Published var cropping = false {
+        didSet {
+            if cropping, !oldValue { cropDraft = recipe.geometry.crop ?? .full }
+            scheduleRender()
+        }
+    }
+    /// The crop box being drawn in Crop mode (applied by Apply, Save, or Save when leaving the editor).
+    @Published var cropDraft: EditRecipe.CropRect = .full
     @Published var eyedropper = false
     @Published private(set) var dirty = false
     /// The RAW file's as-shot white balance, for the Kelvin slider.
@@ -61,7 +68,20 @@ final class DevelopModel: ObservableObject {
     }
 
     /// Unsaved changes since the photo was opened or last saved.
-    var hasChanges: Bool { canEdit && recipe != savedRecipe }
+    var hasChanges: Bool { canEdit && (recipe != savedRecipe || pendingCrop != nil) }
+
+    /// A crop drawn but not yet applied (Crop mode still open), or nil.
+    private var pendingCrop: EditRecipe.CropRect?? {
+        guard cropping else { return nil }
+        let crop: EditRecipe.CropRect? = cropDraft == .full ? nil : cropDraft
+        return crop == recipe.geometry.crop ? nil : .some(crop)
+    }
+
+    /// Crop Apply: puts the drawn crop into the recipe and leaves Crop mode.
+    func applyPendingCrop() {
+        if let crop = pendingCrop { set { $0.geometry.crop = crop } }
+        cropping = false
+    }
     static var clipboard: (recipe: EditRecipe, panels: Set<DevelopPanel>)?
 
     init(library: LibraryModel) {
@@ -515,6 +535,8 @@ final class DevelopModel: ObservableObject {
 
     /// Saves to Immich (built-in edit, Mac version, or revert). Called on Done, when switching photos and on leaving Develop.
     func save() async {
+        // Save while the crop box is still open keeps the crop (as if Apply was clicked first).
+        if cropping { applyPendingCrop() }
         guard dirty, canEdit, let context, let originalFile else { dirty = false; return }
         isSaving = true
         defer { isSaving = false }
@@ -529,7 +551,13 @@ final class DevelopModel: ObservableObject {
             status = nil
             switch outcome {
             case .unchanged: break
-            case .builtInEdit: library.flash("Saved crop/rotation to Immich")
+            case .builtInEdit:
+                // Immich re-renders the photo with the crop/rotation; wait so the new look shows straight away.
+                status = "Processing…"
+                await versions.waitForThumbnails(context.original.id, replacing: context.original.thumbhash, timeout: .seconds(30))
+                status = nil
+                library.flash("Saved crop/rotation to Immich")
+                self.context = try? await versions.context(for: context.original.id)
             case .version(let id):
                 status = "Processing…"
                 await versions.waitForThumbnails(id)
@@ -542,7 +570,8 @@ final class DevelopModel: ObservableObject {
                 self.context = try? await versions.context(for: id)
             case .reverted: library.flash("Reverted to original")
             }
-            await library.timeline.reload()
+            // Re-fetch the photo's month too, so its new thumbhash (cache key) replaces the old image everywhere.
+            await library.timeline.refresh(assetIDs: Set([context.original.id, context.version?.id, self.assetID].compactMap { $0 }))
             library.detailsRevision += 1
             await library.pipeline.invalidate(assetID: context.original.id)
         } catch {

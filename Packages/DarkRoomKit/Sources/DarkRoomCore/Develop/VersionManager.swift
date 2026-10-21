@@ -104,8 +104,11 @@ public struct VersionManager: Sendable {
             return .unchanged
         }
 
-        // Geometry-only on a regular still without a Mac version → Immich's built-in edit.
-        if recipe.isGeometryOnlyBuiltIn, context.version == nil, !isLivePhoto, original.type == .image {
+        // Geometry-only on a regular still without a Mac version → Immich's built-in edit. Not for RAW: Immich renders
+        // RAW with its own converter (and may not apply the edit), so a RAW crop becomes an edited version like
+        // every other RAW edit.
+        if recipe.isGeometryOnlyBuiltIn, context.version == nil, !isLivePhoto, original.type == .image,
+           !RenderEngine.isRAW(originalFile) {
             let edits = Self.builtInEdits(recipe.geometry, asset: original)
             if edits.isEmpty { try await client.removeAssetEdits(id: original.id) }
             else { _ = try await client.editAsset(id: original.id, body: AssetEditsCreateDto(edits: edits)) }
@@ -297,12 +300,13 @@ public struct VersionManager: Sendable {
         }
     }
 
-    /// Waits (up to `timeout`) until Immich has generated an uploaded version's thumbnails, so the photo can be
-    /// shown straight away. Large files such as the 16-bit TIFFs saved for RAW edits take a few seconds.
-    public func waitForThumbnails(_ id: String, timeout: Duration = .seconds(60)) async {
+    /// Waits (up to `timeout`) until Immich has generated an asset's thumbnails (new ones, when `replacing` is the
+    /// thumbhash from before an edit), so the photo can be shown straight away. Large files such as the 16-bit
+    /// TIFFs saved for RAW edits, or RAW originals re-rendered for a crop, take a few seconds.
+    public func waitForThumbnails(_ id: String, replacing old: String? = nil, timeout: Duration = .seconds(60)) async {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline, !Task.isCancelled {
-            if let asset = try? await client.getAssetInfo(id: id), asset.thumbhash != nil { return }
+            if let asset = try? await client.getAssetInfo(id: id), let hash = asset.thumbhash, hash != old { return }
             try? await Task.sleep(for: .milliseconds(500))
         }
     }

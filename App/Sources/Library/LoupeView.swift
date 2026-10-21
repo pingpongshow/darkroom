@@ -52,7 +52,8 @@ struct LoupeView: View {
             PresetBar()
             if library.showFilmstrip { FilmstripView().frame(height: 86) }
         }
-        .task(id: library.focusedAssetID) { await loadPreview() }
+        // Also reloads when the photo is re-rendered (an edit changes its cache key).
+        .task(id: "\(library.focusedAssetID ?? "")|\(library.focusedAsset?.cacheKey ?? "")") { await loadPreview() }
     }
 
     @ViewBuilder private func liveButton(_ asset: TimelineAsset) -> some View {
