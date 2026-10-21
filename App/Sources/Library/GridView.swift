@@ -50,6 +50,7 @@ struct GridView: NSViewRepresentable {
         coordinator.apply(store: ObjectIdentifier(timeline), sections: timeline.sections, revision: timeline.revision,
                           cellSize: library.gridCellSize)
         coordinator.syncSelection(library.selection)
+        coordinator.applyRAW(library.rawAssetIDs)
         if let target = library.scrollRequest {
             coordinator.scroll(toSection: target)
             DispatchQueue.main.async { library.scrollRequest = nil }
@@ -66,6 +67,7 @@ struct GridView: NSViewRepresentable {
         private var store: ObjectIdentifier?
         private var cellSize: Double = 0
         private var updatingSelection = false
+        private var rawIDs: Set<String> = []
 
         init(library: LibraryModel) { self.library = library }
 
@@ -74,6 +76,7 @@ struct GridView: NSViewRepresentable {
             collection.dataSource = self
             collection.delegate = self
             collection.onOpen = { [weak self] in self?.openSelected() }
+            collection.onModifiedClick = { [weak self] path, modifiers in self?.modifiedClick(at: path, modifiers) ?? false }
             collection.menuProvider = { [weak self] point in
                 guard let self, let collection = self.collection else { return nil }
                 if let path = collection.indexPathForItem(at: point), !collection.selectionIndexPaths.contains(path) {
@@ -140,7 +143,7 @@ struct GridView: NSViewRepresentable {
             for path in collection.indexPathsForVisibleItems() where changed.contains(path.section) {
                 guard let item = collection.item(at: path) as? ThumbnailItem else { continue }
                 if let asset = new[path.section].assets?[safe: path.item] {
-                    item.configure(asset: asset, pipeline: library.pipeline, cellSize: cellSize)
+                    item.configure(asset: asset, isRAW: rawIDs.contains(asset.id), pipeline: library.pipeline, cellSize: cellSize)
                 }
             }
             return true
@@ -185,6 +188,17 @@ struct GridView: NSViewRepresentable {
         @objc func scrolled(_ note: Notification?) {
             guard !restoring, let store, let clip = scrollView?.contentView else { return }
             library.gridScroll = (store, clip.bounds.origin.y)
+        }
+
+        /// The RAW list arrived or grew: badge the visible cells (the image itself is kept).
+        func applyRAW(_ ids: Set<String>) {
+            guard ids != rawIDs else { return }
+            rawIDs = ids
+            guard let collection else { return }
+            for path in collection.indexPathsForVisibleItems() {
+                guard let item = collection.item(at: path) as? ThumbnailItem, let asset = asset(at: path) else { continue }
+                item.configure(asset: asset, isRAW: ids.contains(asset.id), pipeline: library.pipeline, cellSize: cellSize)
+            }
         }
 
         func indexPath(of id: String) -> IndexPath? {
@@ -244,7 +258,7 @@ struct GridView: NSViewRepresentable {
             let item = collectionView.makeItem(withIdentifier: ThumbnailItem.identifier, for: indexPath) as! ThumbnailItem
             let section = sections[indexPath.section]
             if let asset = section.assets?[safe: indexPath.item] {
-                item.configure(asset: asset, pipeline: library.pipeline, cellSize: cellSize)
+                item.configure(asset: asset, isRAW: rawIDs.contains(asset.id), pipeline: library.pipeline, cellSize: cellSize)
             } else {
                 item.configurePlaceholder()
                 let bucket = section.bucket
@@ -286,9 +300,51 @@ struct GridView: NSViewRepresentable {
         func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) { selectionChanged() }
         func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) { selectionChanged() }
 
-        func selectionChanged() {
+        /// Where a Shift-click range starts: the last photo clicked or picked on its own.
+        private var anchorID: String?
+
+        /// ⌘-click adds or removes one photo; ⇧-click selects every photo from the anchor to the clicked one.
+        /// Returns false for a plain click (normal selection).
+        func modifiedClick(at path: IndexPath, _ modifiers: NSEvent.ModifierFlags) -> Bool {
+            guard let collection else { return false }
+            if modifiers.contains(.shift), let anchorID, let anchor = indexPath(of: anchorID) {
+                let range = paths(from: anchor, to: path)
+                collection.selectionIndexPaths = modifiers.contains(.command) ? collection.selectionIndexPaths.union(range) : range
+                selectionChanged(keepAnchor: true)
+                return true
+            }
+            if modifiers.contains(.command) || modifiers.contains(.shift) {
+                var paths = collection.selectionIndexPaths
+                if paths.contains(path) { paths.remove(path) } else { paths.insert(path) }
+                collection.selectionIndexPaths = paths
+                anchorID = asset(at: path)?.id
+                selectionChanged(keepAnchor: true)
+                return true
+            }
+            anchorID = asset(at: path)?.id
+            return false
+        }
+
+        /// Every cell between two cells (inclusive), across months, in grid order.
+        private func paths(from a: IndexPath, to b: IndexPath) -> Set<IndexPath> {
+            let (start, end) = a <= b ? (a, b) : (b, a)
+            var result = Set<IndexPath>()
+            for s in start.section...end.section where sections.indices.contains(s) {
+                let count = sections[s].assets?.count ?? sections[s].count
+                guard count > 0 else { continue }
+                let first = s == start.section ? start.item : 0
+                let last = s == end.section ? min(end.item, count - 1) : count - 1
+                guard first <= last else { continue }
+                for i in first...last { result.insert(IndexPath(item: i, section: s)) }
+            }
+            return result
+        }
+
+        func selectionChanged(keepAnchor: Bool = false) {
             guard !updatingSelection, let collection else { return }
             let ids = Set(collection.selectionIndexPaths.compactMap { asset(at: $0)?.id })
+            // A single photo picked another way (arrow keys, plain click) becomes the new anchor.
+            if !keepAnchor, ids.count == 1 { anchorID = ids.first }
             library.selection = ids
             if let last = collection.selectionIndexPaths.max(), let asset = asset(at: last) {
                 library.focusedAssetID = asset.id
@@ -300,6 +356,8 @@ struct GridView: NSViewRepresentable {
 /// Collection view that opens the loupe on Return/Space/double-click.
 final class GridCollectionView: NSCollectionView {
     var onOpen: (() -> Void)?
+    /// Click with ⌘ or ⇧ on a cell: returns true when handled (the click is then not passed on).
+    var onModifiedClick: ((IndexPath, NSEvent.ModifierFlags) -> Bool)?
     var onDoubleClick: ((NSPoint) -> Void)?
     var menuProvider: ((NSPoint) -> NSMenu?)?
 
@@ -324,6 +382,12 @@ final class GridCollectionView: NSCollectionView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.clickCount == 1, let path = indexPathForItem(at: convert(event.locationInWindow, from: nil)),
+           onModifiedClick?(path, modifiers) == true {
+            window?.makeFirstResponder(self)
+            return
+        }
         super.mouseDown(with: event)
         if event.clickCount == 2 { onDoubleClick?(convert(event.locationInWindow, from: nil)) }
     }
@@ -386,7 +450,7 @@ final class ThumbnailItem: NSCollectionViewItem {
         view.setAccessibilityIdentifier(nil)
     }
 
-    func configure(asset: TimelineAsset, pipeline: ImagePipeline, cellSize: Double) {
+    func configure(asset: TimelineAsset, isRAW: Bool, pipeline: ImagePipeline, cellSize: Double) {
         task?.cancel()
         assetID = asset.id
         view.setAccessibilityElement(true)
@@ -396,6 +460,7 @@ final class ThumbnailItem: NSCollectionViewItem {
         var flags: [String] = []
         if asset.isFavorite { flags.append("♥") }
         if asset.isLivePhoto { flags.append("LIVE") }
+        if isRAW { flags.append("RAW") }
         if asset.isPanorama { flags.append("360°") }
         if let count = asset.stackCount { flags.append("◫ \(count)") }
         icons.stringValue = flags.joined(separator: "  ")

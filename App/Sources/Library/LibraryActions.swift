@@ -151,14 +151,23 @@ extension LibraryModel {
         }
     }
 
-    private func removeFromView(_ ids: [String]) {
-        if mode != .grid, let focused = focusedAssetID, ids.contains(focused) {
-            step(1)
-            if focusedAssetID == focused { step(-1) }
-            if focusedAssetID == focused { mode = .grid }
+    /// Takes photos out of the current view. When the photo on screen goes, the loupe moves on to the next
+    /// remaining photo (the previous one at the end), so Back returns to the same place in the grid.
+    func removeFromView(_ ids: [String]) {
+        let removed = Set(ids)
+        if mode != .grid, let focused = focusedAssetID, removed.contains(focused) {
+            let assets = orderedAssets
+            if let index = assets.firstIndex(where: { $0.id == focused }),
+               let next = assets[(index + 1)...].first(where: { !removed.contains($0.id) })
+                    ?? assets[..<index].last(where: { !removed.contains($0.id) }) {
+                focusedAssetID = next.id
+                selection = [next.id]
+            } else if !assets.contains(where: { !removed.contains($0.id) }) {
+                mode = .grid
+            }
         }
         selection.subtract(ids)
-        timeline.remove(Set(ids))
+        timeline.remove(removed)
     }
 
     func flash(_ message: String, isError: Bool = false) {
@@ -428,7 +437,7 @@ extension LibraryModel {
             })
         }
         entries.append(.separator)
-        entries.append(MenuEntry(title: "Adjust Date & Time…", symbol: "calendar.badge.clock", key: "d", modifiers: [.command, .shift],
+        entries.append(MenuEntry(title: "Set Date & Time…", symbol: "calendar.badge.clock", key: "d", modifiers: [.command, .shift],
                                  isEnabled: has) { [weak self] in self?.sheet = .dateTime(ids) })
         entries.append(MenuEntry(title: "Edit Metadata…", symbol: "pencil", key: "m", modifiers: [.command, .shift],
                                  isEnabled: has) { [weak self] in self?.sheet = .metadata(ids) })

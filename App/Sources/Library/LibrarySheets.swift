@@ -61,86 +61,136 @@ private func itemsLabel(_ count: Int) -> String { count == 1 ? "1 item" : "\(cou
 
 // MARK: Date & time
 
-/// Shift capture dates by an offset, or set an exact date, with a before/after preview.
+/// Sets an exact capture date and time: pick it on the calendar or type it, in the photo's time zone,
+/// with a before/after preview.
 struct DateTimeSheet: View {
     @EnvironmentObject var library: LibraryModel
     let ids: [String]
-    enum Mode: String, CaseIterable { case shift = "Shift by", set = "Set to" }
-    @State private var mode: Mode = .shift
-    @State private var forward = true
-    @State private var days = 0
-    @State private var hours = 0
-    @State private var minutes = 0
-    @State private var exact = Date()
+    @State private var date = Date()
     @State private var zone = TimeZone.current.identifier
     @State private var assets: [AssetResponseDto] = []
+    @State private var initialized = false
+
+    private var timeZone: TimeZone { TimeZone(identifier: zone) ?? .current }
 
     var body: some View {
-        SheetFrame(title: "Adjust Date & Time", subtitle: "\(itemsLabel(ids.count)) · original files aren’t changed",
-                   confirm: "Adjust", confirmDisabled: mode == .shift && offsetMinutes == 0, onConfirm: apply) {
-            Picker("", selection: $mode) { ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) } }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 220)
-            if mode == .shift {
-                HStack {
-                    Picker("", selection: $forward) { Text("Later").tag(true); Text("Earlier").tag(false) }
-                        .labelsHidden().frame(width: 90)
-                    Stepper("\(days) d", value: $days, in: 0...3650).frame(width: 90)
-                    Stepper("\(hours) h", value: $hours, in: 0...23).frame(width: 80)
-                    Stepper("\(minutes) min", value: $minutes, in: 0...59).frame(width: 100)
-                }
-                .accessibilityIdentifier("date-shift")
-            } else {
-                HStack {
-                    DatePicker("", selection: $exact).labelsHidden()
-                    Picker("Time zone", selection: $zone) {
-                        ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { Text($0).tag($0) }
+        SheetFrame(title: "Set Date & Time", subtitle: "\(itemsLabel(ids.count)) · original files aren’t changed",
+                   confirm: "Set", onConfirm: apply) {
+            HStack(alignment: .top, spacing: 22) {
+                DatePicker("", selection: $date, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .frame(width: 200)
+                    .accessibilityIdentifier("date-calendar")
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Date").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                        DatePicker("", selection: $date, displayedComponents: .date)
+                            .datePickerStyle(.field).labelsHidden()
+                            .accessibilityIdentifier("date-field")
                     }
-                    .frame(width: 260)
+                    GridRow {
+                        Text("Time").foregroundStyle(.secondary)
+                        DatePicker("", selection: $date, displayedComponents: [.hourAndMinute])
+                            .datePickerStyle(.field).labelsHidden()
+                            .accessibilityIdentifier("time-field")
+                    }
+                    GridRow {
+                        Text("Time zone").foregroundStyle(.secondary)
+                        Picker("", selection: $zone) {
+                            ForEach(Self.zones, id: \.self) { Text(Self.zoneLabel($0)).tag($0) }
+                        }
+                        .labelsHidden().frame(width: 250)
+                        .accessibilityIdentifier("date-zone")
+                    }
+                    GridRow {
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                        HStack(spacing: 12) {
+                            Button("Now") { date = Date() }
+                            if let first = assets.first, captureDate(first) != nil {
+                                Button("Reset to Photo’s Date") { useDate(of: first) }
+                                    .help("Back to the first photo’s current date and time")
+                            }
+                        }
+                        .controlSize(.small)
+                    }
                 }
-                if let first = assets.first, let date = captureDate(first) {
-                    Button("Use date of first photo") { exact = date }.buttonStyle(.link)
-                }
+                .padding(.top, 6)
             }
+            // The calendar and fields show wall-clock time in the chosen zone.
+            .environment(\.timeZone, timeZone)
+
+            Divider()
             Text("Preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            List(assets.prefix(50), id: \.id) { asset in
-                HStack {
-                    Text(asset.originalFileName).lineLimit(1).frame(width: 170, alignment: .leading)
-                    Text(format(captureDate(asset))).foregroundStyle(.secondary).monospacedDigit()
-                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                    Text(format(newDate(for: asset))).monospacedDigit()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(assets.prefix(50), id: \.id) { asset in
+                        HStack(spacing: 8) {
+                            Text(asset.originalFileName).lineLimit(1).truncationMode(.middle)
+                                .frame(width: 180, alignment: .leading)
+                            Text(format(captureDate(asset))).foregroundStyle(.secondary).monospacedDigit()
+                            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                            Text(format(newDate)).monospacedDigit()
+                        }
+                        .font(.caption)
+                    }
+                    if assets.count > 50 {
+                        Text("and \(assets.count - 50) more").font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
-                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
             }
-            .frame(width: 560, height: 200)
+            .frame(width: 520, height: 120)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor).opacity(0.5)))
         }
-        .task { assets = (try? await library.actions.details(ids)) ?? [] }
+        .task {
+            assets = (try? await library.actions.details(ids)) ?? []
+            if !initialized, let first = assets.first { useDate(of: first) }
+            initialized = true
+        }
     }
 
-    private var offsetMinutes: Int { (forward ? 1 : -1) * (days * 1440 + hours * 60 + minutes) }
+    /// Every known zone, west to east.
+    private static let zones: [String] = TimeZone.knownTimeZoneIdentifiers.sorted {
+        let a = TimeZone(identifier: $0)?.secondsFromGMT() ?? 0, b = TimeZone(identifier: $1)?.secondsFromGMT() ?? 0
+        return a != b ? a < b : $0 < $1
+    }
 
+    private static func zoneLabel(_ identifier: String) -> String {
+        let seconds = TimeZone(identifier: identifier)?.secondsFromGMT() ?? 0
+        let sign = seconds < 0 ? "−" : "+"
+        let offset = String(format: "GMT%@%02d:%02d", sign, abs(seconds) / 3600, abs(seconds) / 60 % 60)
+        return "(\(offset)) \(identifier.replacingOccurrences(of: "_", with: " "))"
+    }
+
+    /// Starts from a photo's capture time, in its own time zone when Immich knows it.
+    private func useDate(of asset: AssetResponseDto) {
+        guard let local = captureDate(asset) else { return }
+        let created = ImmichDate.parse(asset.fileCreatedAt) ?? local
+        let offset = Int(local.timeIntervalSince(created).rounded())
+        if let name = asset.exifInfo?.timeZone, TimeZone(identifier: name) != nil, Self.zones.contains(name) {
+            zone = name
+        } else if timeZone.secondsFromGMT(for: created) != offset,
+                  let match = Self.zones.first(where: { TimeZone(identifier: $0)?.secondsFromGMT(for: created) == offset }) {
+            zone = match
+        }
+        date = created
+    }
+
+    /// Immich's local date-time: wall-clock time expressed as UTC.
     private func captureDate(_ asset: AssetResponseDto) -> Date? { ImmichDate.parse(asset.localDateTime) }
 
-    private func newDate(for asset: AssetResponseDto) -> Date? {
-        switch mode {
-        case .shift: captureDate(asset)?.addingTimeInterval(Double(offsetMinutes) * 60)
-        case .set: exact.addingTimeInterval(Double(TimeZone(identifier: zone)?.secondsFromGMT(for: exact) ?? 0))
-        }
-    }
+    private var newDate: Date { date.addingTimeInterval(Double(timeZone.secondsFromGMT(for: date))) }
 
     private func format(_ date: Date?) -> String {
         guard let date else { return "—" }
-        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: TimeZone(identifier: "UTC")!))
+        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .standard, timeZone: TimeZone(identifier: "UTC")!))
     }
 
     private func apply() {
-        switch mode {
-        case .shift:
-            let offset = offsetMinutes
-            library.perform("Adjust Date & Time", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.shiftDates(ids, byMinutes: offset) }
-        case .set:
-            let date = exact, tz = TimeZone(identifier: zone) ?? .current
-            library.perform("Set Date & Time", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setDate(ids, to: date, timeZone: tz) }
-        }
+        let date = self.date, tz = timeZone
+        library.perform("Set Date & Time", ids: ids, change: .metadata(ids: ids), rewritesFiles: true) { try await $0.setDate(ids, to: date, timeZone: tz) }
         Task { try? await Task.sleep(for: .seconds(2)); await library.timeline.reload() }
     }
 }

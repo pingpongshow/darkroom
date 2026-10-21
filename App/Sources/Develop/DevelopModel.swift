@@ -96,6 +96,8 @@ final class DevelopModel: ObservableObject {
             status = "Downloading original…"
             let file = try await originals.file(for: context.original)
             guard self.assetID == assetID else { return }
+            await versions.matchLibraryLook(original: context.original, file: file)
+            guard self.assetID == assetID else { return }
             originalFile = file
             isRAW = RenderEngine.isRAW(file)
             rawNeutral = engine.rawNeutral(file)
@@ -529,6 +531,9 @@ final class DevelopModel: ObservableObject {
             case .unchanged: break
             case .builtInEdit: library.flash("Saved crop/rotation to Immich")
             case .version(let id):
+                status = "Processing…"
+                await versions.waitForThumbnails(id)
+                status = nil
                 library.flash("Saved edited version")
                 if library.focusedAssetID == context.version?.id || library.focusedAssetID == context.original.id {
                     library.focusedAssetID = id

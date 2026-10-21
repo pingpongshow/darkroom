@@ -18,6 +18,8 @@ public final class RenderEngine: @unchecked Sendable {
     private var lutCache: [Int: Data] = [:]
     private var neutralCache: [String: SIMD3<Float>] = [:]
     private var visionStore: [String: CIImage] = [:]
+    /// Per-RAW-file tone/colour curves matching the library's rendition (see `matchLibraryLook`), by file path.
+    private var baselines: [String: Data] = [:]
 
     func visionCache(_ key: String) -> CIImage? { lock.withLock { visionStore[key] } }
     func storeVision(_ image: CIImage, _ key: String) {
@@ -85,12 +87,87 @@ public final class RenderEngine: @unchecked Sendable {
                 }
             }
             guard let image = raw.outputImage else { throw RenderError.unreadable }
+            // Same starting look as the library (HDR keeps Apple's decode, whose highlights the curves would clip).
+            if !recipe.hdr, let curves = lock.withLock({ baselines[url.path] }) {
+                let filter = CIFilter.colorCurves()
+                filter.inputImage = image
+                filter.curvesData = curves
+                filter.curvesDomain = CIVector(x: 0, y: 1)
+                filter.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+                return filter.outputImage ?? image
+            }
             return image
         }
         guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true, .expandToHDR: true]) else {
             throw RenderError.unreadable
         }
         return image
+    }
+
+    /// Makes an unedited RAW start out looking like the library's rendition of it (`reference`, e.g. Immich's
+    /// preview) instead of Apple's own RAW rendering: per-channel curves found by matching the two images'
+    /// histograms, applied straight after the RAW decode for this file from now on (editor and saved versions).
+    public func matchLibraryLook(_ url: URL, reference: CGImage) {
+        guard Self.isRAW(url), lock.withLock({ baselines[url.path] }) == nil,
+              let raw = CIRAWFilter(imageURL: url) else { return }
+        raw.scaleFactor = 0.25
+        guard let decoded = raw.outputImage else { return }
+        let side: CGFloat = 512
+        let scaled = decoded.transformed(by: CGAffineTransform(scaleX: side / max(decoded.extent.width, decoded.extent.height),
+                                                               y: side / max(decoded.extent.width, decoded.extent.height)))
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ours = context.createCGImage(scaled, from: scaled.extent.integral, format: .RGBA8, colorSpace: srgb),
+              let mine = Self.histograms(ours), let theirs = Self.histograms(reference) else { return }
+        var curves = [Float](repeating: 0, count: 256 * 3)
+        for channel in 0..<3 {
+            let source = Self.cumulative(mine[channel]), target = Self.cumulative(theirs[channel])
+            var j = 0
+            for i in 0..<256 {
+                while j < 255 && target[j] < source[i] { j += 1 }
+                curves[i * 3 + channel] = Float(j) / 255
+            }
+        }
+        // Monotone and smooth: a light running average keeps 8-bit steps from showing as banding.
+        var smoothed = curves
+        for i in 0..<256 {
+            for channel in 0..<3 {
+                let lo = max(0, i - 2), hi = min(255, i + 2)
+                smoothed[i * 3 + channel] = (lo...hi).map { curves[$0 * 3 + channel] }.reduce(0, +) / Float(hi - lo + 1)
+            }
+        }
+        // Already alike (e.g. the server shows the camera's embedded JPEG): leave Apple's rendering untouched.
+        var shift = 0.0, weight = 0.0
+        for channel in 0..<3 {
+            for i in 0..<256 {
+                shift += mine[channel][i] * Double(abs(smoothed[i * 3 + channel] - Float(i) / 255))
+                weight += mine[channel][i]
+            }
+        }
+        guard weight > 0, shift / weight > 4.0 / 255 else { return }
+        let data = smoothed.withUnsafeBufferPointer { Data(buffer: $0) }
+        lock.withLock { baselines[url.path] = data }
+    }
+
+    /// 256-bin R, G, B histograms of an image drawn into sRGB.
+    private static func histograms(_ image: CGImage) -> [[Double]]? {
+        let width = min(image.width, 512), height = max(1, Int(Double(image.height) * Double(width) / Double(image.width)))
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let bitmap = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                     space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                     bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        bitmap.interpolationQuality = .medium
+        bitmap.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var bins = [[Double]](repeating: [Double](repeating: 0, count: 256), count: 3)
+        for p in stride(from: 0, to: pixels.count, by: 4) {
+            bins[0][Int(pixels[p])] += 1; bins[1][Int(pixels[p + 1])] += 1; bins[2][Int(pixels[p + 2])] += 1
+        }
+        return bins
+    }
+
+    private static func cumulative(_ bins: [Double]) -> [Double] {
+        let total = max(1, bins.reduce(0, +))
+        var sum = 0.0
+        return bins.map { sum += $0; return sum / total }
     }
 
     /// As-shot neutral temperature/tint of a RAW file (for the White Balance sliders).

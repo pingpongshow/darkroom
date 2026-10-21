@@ -109,14 +109,6 @@ public struct AssetActions: Sendable {
 
     // MARK: Date and time
 
-    /// Shifts capture dates by a fixed offset (e.g. a camera clock that was wrong).
-    public func shiftDates(_ ids: [String], byMinutes minutes: Int) async throws -> UndoAction {
-        try await client.updateAssets(body: AssetBulkUpdateDto(dateTimeRelative: minutes, ids: ids))
-        return UndoAction(name: "Adjust Date & Time") { [client] in
-            try await client.updateAssets(body: AssetBulkUpdateDto(dateTimeRelative: -minutes, ids: ids))
-        }
-    }
-
     /// Sets an exact capture date (local wall-clock time in `timeZone`).
     public func setDate(_ ids: [String], to date: Date, timeZone: TimeZone) async throws -> UndoAction {
         let previous = try await details(ids)

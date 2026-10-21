@@ -79,11 +79,19 @@ struct LoupeView: View {
         if let quick = await library.pipeline.cachedImage(key, maxPixel: 256) { image = quick } else {
             image = asset.thumbhash.flatMap { ThumbHash.cgImage(base64: $0) }
         }
-        do {
-            image = try await library.pipeline.image(.init(assetID: asset.id, size: .preview, cacheKey: asset.cacheKey))
-        } catch is CancellationError {
-        } catch {
-            loadError = "Couldn’t load this photo: \(error.localizedDescription)"
+        // A just-saved version can be shown before Immich has made its preview (404): keep trying for a while.
+        for attempt in 0..<30 {
+            do {
+                image = try await library.pipeline.image(.init(assetID: asset.id, size: .preview, cacheKey: asset.cacheKey))
+                break
+            } catch is CancellationError {
+                return
+            } catch ImmichError.http(status: 404, _, _) where attempt < 29 {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            } catch {
+                loadError = "Couldn’t load this photo: \(error.localizedDescription)"
+                break
+            }
         }
         if let index = library.orderedAssets.firstIndex(where: { $0.id == asset.id }) { library.prefetchAround(index) }
     }

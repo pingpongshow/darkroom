@@ -46,6 +46,43 @@ public enum LibraryUtilities {
             .prefix(limit).map { $0 }
     }
 
+    /// Ids of every RAW photo (by original file extension), for the grid's RAW badge.
+    public static func rawAssetIDs(_ client: ImmichClient) async throws -> Set<String> {
+        func isRAW(_ asset: AssetResponseDto) -> Bool {
+            RenderEngine.rawExtensions.contains((asset.originalFileName as NSString).pathExtension.lowercased())
+        }
+        var ids = Set<String>()
+        // Immich 3.2+: one filtered search, "name ends with .cr2 OR .nef OR …", paged by cursor.
+        let branches = RenderEngine.rawExtensions.sorted().map {
+            SearchFilterBranch(originalFileName: StringPatternFilter(endsWith: ".\($0)"))
+        }
+        do {
+            var cursor: String?
+            repeat {
+                let response = try await client.searchAssets(body: MetadataSearchDto(
+                    cursor: cursor, filter: SearchFilter(or: branches), size: 1000, withExif: false))
+                ids.formUnion(response.assets.items.filter(isRAW).map(\.id))
+                cursor = response.assets.nextCursor
+            } while cursor != nil
+            return ids
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Older servers: the file-name search matches anywhere in the name, so check the extension here.
+        }
+        for ext in RenderEngine.rawExtensions {
+            var page = 1
+            while true {
+                let response = try await client.searchAssets(body: MetadataSearchDto(originalFileName: ".\(ext)", page: page,
+                                                                                    size: 1000, withExif: false))
+                ids.formUnion(response.assets.items.filter(isRAW).map(\.id))
+                guard let next = response.assets.nextPage.flatMap(Int.init), next > page else { break }
+                page = next
+            }
+        }
+        return ids
+    }
+
     // MARK: Folders
 
     // MARK: Duplicates

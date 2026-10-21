@@ -1,5 +1,6 @@
 import Foundation
 import ImmichAPI
+import ImageIO
 
 /// What DarkRoom stores with a Mac version (asset metadata key `darkroom.recipe`).
 public struct VersionRecord: Codable, Hashable, Sendable {
@@ -61,6 +62,16 @@ public struct VersionManager: Sendable {
         return Context(original: asset, version: nil, recipe: Self.recipe(fromBuiltIn: edits, asset: asset), builtInEdits: edits)
     }
 
+    /// RAW originals: starts their rendering from the look Immich shows for them (its preview), so opening the
+    /// editor or saving doesn't change colours or brightness by itself. No-op for other files or without a preview.
+    public func matchLibraryLook(original: AssetResponseDto, file: URL) async {
+        guard RenderEngine.isRAW(file),
+              let data = try? await client.thumbnail(assetID: original.id, size: .preview, edited: false),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let reference = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
+        await Task.detached(priority: .userInitiated) { RenderEngine.shared.matchLibraryLook(file, reference: reference) }.value
+    }
+
     public func record(of id: String) async throws -> VersionRecord? {
         guard let item = try? await client.getAssetMetadataByKey(id: id, key: EditRecipe.metadataKey) else { return nil }
         return try? item.value.decodeISO(VersionRecord.self)
@@ -120,6 +131,7 @@ public struct VersionManager: Sendable {
         } else {
             let (_, ext) = RenderEngine.outputType(for: originalFile, hdr: recipe.hdr)
             let output = work.appending(path: "\(base)-edit.\(ext)")
+            await matchLibraryLook(original: original, file: originalFile)
             try RenderEngine.shared.export(original: originalFile, recipe: recipe, to: output)
             var motionID: String?
             if isLivePhoto, let originalMotion = original.livePhotoVideoId {
@@ -282,6 +294,16 @@ public struct VersionManager: Sendable {
         for _ in 0..<20 {
             if (try? await client.getAssetInfo(id: id)) != nil { return }
             try await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    /// Waits (up to `timeout`) until Immich has generated an uploaded version's thumbnails, so the photo can be
+    /// shown straight away. Large files such as the 16-bit TIFFs saved for RAW edits take a few seconds.
+    public func waitForThumbnails(_ id: String, timeout: Duration = .seconds(60)) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline, !Task.isCancelled {
+            if let asset = try? await client.getAssetInfo(id: id), asset.thumbhash != nil { return }
+            try? await Task.sleep(for: .milliseconds(500))
         }
     }
 

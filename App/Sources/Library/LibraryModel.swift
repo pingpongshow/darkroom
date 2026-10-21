@@ -238,11 +238,15 @@ final class LibraryModel: ObservableObject {
         }
     }
     @Published var confirmTrashRejects = false
+    /// RAW photos (by file extension), for the grid's RAW badge; filled in the background at start.
+    @Published var rawAssetIDs: Set<String> = []
     /// Navigation history for Back (⌘[).
     private var history: [LibraryDestination] = []
     private var navigatingBack = false
     /// Every geotagged timeline asset, loaded on first use of the map.
     private var mapStore: TimelineStore?
+    /// The map's markers from the last visit, shown at once while they refresh.
+    var mapMarkers: [MapMarkerResponseDto]?
     /// The window's undo manager (set by the shell) for ⌘Z of organising actions.
     weak var undoManager: UndoManager?
     /// Bumped when asset details change so the info panel reloads.
@@ -282,6 +286,9 @@ final class LibraryModel: ObservableObject {
         startLiveUpdates()
         Task.detached(priority: .background) { [pipeline] in await pipeline.trimDiskCache() }
         Task { await reconcile() }
+        Task { [client] in
+            if let ids = try? await LibraryUtilities.rawAssetIDs(client) { rawAssetIDs.formUnion(ids) }
+        }
     }
 
     func stop() {
@@ -497,7 +504,14 @@ final class LibraryModel: ObservableObject {
 
     private func handle(_ event: ImmichEvent) async {
         switch event {
-        case .uploadSuccess, .assetRestore, .stackUpdate:
+        case .uploadSuccess(let id):
+            // Immich reports this once thumbnails exist, so reload the month too (a saved version's thumbhash).
+            if !timeline.isStatic { await timeline.refresh(assetIDs: [id]) }
+            if let asset = try? await client.getAssetInfo(id: id),
+               RenderEngine.rawExtensions.contains((asset.originalFileName as NSString).pathExtension.lowercased()) {
+                rawAssetIDs.insert(id)
+            }
+        case .assetRestore, .stackUpdate:
             if !timeline.isStatic { await timeline.reload() }
         case .albumUpdate:
             await loadAlbums()
@@ -505,13 +519,13 @@ final class LibraryModel: ObservableObject {
             await timeline.refresh(assetIDs: [id])
         case .assetTrash(let ids) where ids.contains(where: isRegisteredVersion):
             await reconcile()
-            if destination != .trash { timeline.remove(Set(ids)) } else { await timeline.reload() }
+            if destination != .trash { removeFromView(ids) } else { await timeline.reload() }
         case .assetTrash(let ids):
-            if destination != .trash { timeline.remove(Set(ids)) } else { await timeline.reload() }
+            if destination != .trash { removeFromView(ids) } else { await timeline.reload() }
         case .assetDelete(let id) where isRegisteredVersion(id):
             await reconcile()
         case .assetDelete(let id), .assetHidden(let id):
-            timeline.remove([id])
+            removeFromView([id])
         case .sessionDelete:
             break
         default:
