@@ -100,7 +100,14 @@ final class DevelopModel: ObservableObject {
     // MARK: Opening
 
     func open(_ assetID: String) async {
-        guard assetID != self.assetID else { return }
+        // Already open, or still opening: nothing to do. After an open that failed, try again.
+        guard assetID != self.assetID || (originalFile == nil && !isLoading) else { return }
+        // Not tied to the view's task: leaving the editor while a big RAW downloads must not leave the photo
+        // half-open (reopening it would then show nothing).
+        await Task { await load(assetID) }.value
+    }
+
+    private func load(_ assetID: String) async {
         stashDraft()   // never saved silently; kept as a draft if anything bypassed the prompt
         self.assetID = assetID
         context = nil; preview = nil; base = nil; originalFile = nil; error = nil; histogram = nil
